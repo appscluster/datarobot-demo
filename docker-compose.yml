@@ -52,5 +52,26 @@ services:
   # Prowler is NOT in this profile on purpose: it needs your own cloud credentials.
   # Run it with: PROWLER_OPT_IN=1 PROWLER_PROVIDER=aws AWS_PROFILE=<yours> make scan-cloud
 
+  # ---- Optional LightRAG retrieval: `docker compose --profile lightrag up --build backend-lightrag` ----
+  # Same API on port 54124 with RETRIEVAL_BACKEND=lightrag. LLM and embeddings from Ollama.
+  backend-lightrag:
+    profiles: ["lightrag"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.lightrag
+    ports:
+      - "54124:54123"
+    environment:
+      RETRIEVAL_BACKEND: lightrag
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://192.168.70.20:11434}
+      LIGHTRAG_LLM_MODEL: ${LIGHTRAG_LLM_MODEL:-qwen3:4b}
+      LIGHTRAG_EMBED_MODEL: ${LIGHTRAG_EMBED_MODEL:-nomic-embed-text}
+      LIGHTRAG_EMBED_DIM: ${LIGHTRAG_EMBED_DIM:-768}
+      LIGHTRAG_QUERY_MODE: ${LIGHTRAG_QUERY_MODE:-hybrid}
+      LIGHTRAG_WORKDIR: /app/backend/var/lightrag
+    volumes:
+      - ./backend/var:/app/backend/var
+      - ./reports:/app/reports:ro
+
 volumes:
   trivy-cache: {}

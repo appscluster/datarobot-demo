@@ -5,6 +5,7 @@ import time
 from . import graph as graph_mod
 from . import checker as checker_mod
 from . import scope as scope_mod
+from . import retrieval as retrieval_mod
 
 try:
     from langgraph.graph import StateGraph, START, END
@@ -47,7 +48,7 @@ def _operator(state: TriageState, sink: Callable[[Dict[str, Any]], None]) -> Tri
         return state
     tenant_id = state["tenant_id"]
     finding_id = state["finding_id"]
-    sub = graph_mod._ACTIVE_GRAPH.retrieve(tenant_id, finding_id, k=2, question=None) if graph_mod._ACTIVE_GRAPH else {"nodes": [], "edges": []}
+    sub = retrieval_mod.retrieve(tenant_id, finding_id, k=2, question=None)
     _emit(sink, {"phase": "operator", "tool": "enrich_asset_graph", "result": {"subgraph_nodes": len(sub.get("nodes", []))}})
     state["subgraph"] = sub
     # Rank risk (simple heuristic from node props)

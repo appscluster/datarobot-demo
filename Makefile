@@ -1,4 +1,4 @@
-.PHONY: eval deps security-scan scan-secrets scan-deps scan-sast scan-cloud security-ingest security-ingest-fixtures test-security
+.PHONY: eval deps test-all lightrag-deps lightrag-index lightrag-smoke test-lightrag agent-tooling security-scan scan-secrets scan-deps scan-sast scan-cloud security-ingest security-ingest-fixtures test-security
 
 deps:
 	pip3 install --user -r backend/requirements.txt -r backend/requirements-dev.txt
@@ -30,3 +30,25 @@ security-ingest-fixtures: ## synthetic fixtures only (offline demo)
 
 test-security:
 	PYTHONPATH=. python3 -m pytest -q tests/test_security_sources.py
+
+# ---- Optional LightRAG retrieval (default off; see docs/LIGHTRAG.md) ----
+lightrag-deps:
+	pip3 install --user -r backend/requirements-lightrag.txt
+
+lightrag-index:           ## index graph + runbooks + scanner findings into LightRAG (needs Ollama)
+	RETRIEVAL_BACKEND=lightrag python3 -m agent.lightrag_backend index
+
+lightrag-smoke:           ## real lightrag-hku with a fake LLM and fake embeddings (offline)
+	python3 scripts/lightrag_smoke.py
+
+test-lightrag:
+	PYTHONPATH=. python3 -m pytest -q tests/test_lightrag_backend.py
+
+# ---- All offline checks ----
+test-all:
+	PYTHONPATH=. python3 -m pytest -q evals
+	PYTHONPATH=. python3 -m pytest -q tests/test_security_sources.py tests/test_lightrag_backend.py
+
+# ---- Coding agent tooling for Claude Code, Cursor, OpenCode (see docs/AGENT_TOOLING.md) ----
+agent-tooling:
+	scripts/install_agent_tooling.sh --dry-run

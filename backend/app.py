@@ -15,6 +15,7 @@ from agent import scope as scope_mod
 from agent import runner as runner_mod
 from agent import checker as checker_mod
 from agent import security_sources as sec_mod
+from agent import retrieval as retrieval_mod
 from .otel_stub import init_otel
 from types import SimpleNamespace
 import json
@@ -125,7 +126,7 @@ async def enrich_asset_graph(payload: Dict[str, Any]):
     v = scope_mod.guard(SESSION, "enrich_asset_graph", {"tenant_id": tenant_id, "finding_id": finding_id, "requested_action": question or ""}, run_id=str(uuid.uuid4()))
     if not v.allowed:
         return JSONResponse(status_code=403, content=v.__dict__)
-    sub = graph_mod._ACTIVE_GRAPH.retrieve(tenant_id, finding_id, k=k_hops, question=question) if graph_mod._ACTIVE_GRAPH else {"nodes": [], "edges": []}
+    sub = retrieval_mod.retrieve(tenant_id, finding_id, k=k_hops, question=question)
     return {"subgraph": sub}
 
 
@@ -254,7 +255,7 @@ async def start_run(payload: Dict[str, Any] = Body(...)):
             await q.put({"data": json.dumps(_record({"phase": "planner", "verdict": v}))})
             _mark("planner")
             # Operator: enrich + rank_risk + draft
-            sub = graph_mod._ACTIVE_GRAPH.retrieve(tenant_id, finding_id, k=2, question=None) if graph_mod._ACTIVE_GRAPH else {"nodes": [], "edges": []}
+            sub = retrieval_mod.retrieve(tenant_id, finding_id, k=2, question=None)
             await q.put({"data": json.dumps(_record({"phase": "operator", "tool": "enrich_asset_graph", "result": {"subgraph_nodes": len(sub.get("nodes", []))}}))})
             _mark("enrich")
             n = graph_mod._ACTIVE_GRAPH.get(f"finding:{finding_id}") if graph_mod._ACTIVE_GRAPH else None
@@ -369,7 +370,7 @@ async def run_simulate(payload: Dict[str, Any] = Body(...)):
     v = scope_mod.check_scope(tenant_id, "triage finding", [f"finding:{finding_id}"])
     rec({"phase": "planner", "verdict": v})
     # Operator
-    sub = graph_mod._ACTIVE_GRAPH.retrieve(tenant_id, finding_id, k=2, question=None) if graph_mod._ACTIVE_GRAPH else {"nodes": [], "edges": []}
+    sub = retrieval_mod.retrieve(tenant_id, finding_id, k=2, question=None)
     rec({"phase": "operator", "tool": "enrich_asset_graph", "result": {"subgraph_nodes": len(sub.get("nodes", []))}})
     n = graph_mod._ACTIVE_GRAPH.get(f"finding:{finding_id}") if graph_mod._ACTIVE_GRAPH else None
     band = (n.props.get("gold_band") if n else "medium") if n else "medium"

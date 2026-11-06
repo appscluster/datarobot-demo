@@ -10,6 +10,9 @@ scan:
     - .venv
     - data/security_fixtures
     - reports
+    - .agents
+    - .claude
+    - .cursor
 pkg:
   # the demo runs the Vite dev server, so dev dependencies count
   include-dev-deps: true

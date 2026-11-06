@@ -55,3 +55,11 @@ Stored findings never contain a secret value: only rule id, file, line,
 fingerprint and a masked preview. API: `POST /api/security/ingest`
 (`{"source": "auto"|"reports"|"fixtures"}`) and `GET /api/security/summary`.
 Details and safety rules: [security/README.md](security/README.md).
+
+## Coding agent tooling and optional LightRAG
+
+* `CLAUDE.md` (and `AGENTS.md`) describe the stack, commands, rules and which project skills to use.
+* Superpowers and UI UX Pro Max skills are vendored in `.claude/skills`, `.cursor/skills` and `.agents/skills`.
+* `scripts/install_agent_tooling.sh` (dry run by default) installs claude-mem and GSD Core on your machine.
+* Optional LightRAG retrieval with Ollama, off by default: [docs/LIGHTRAG.md](docs/LIGHTRAG.md).
+* Full table with pinned commits: [docs/AGENT_TOOLING.md](docs/AGENT_TOOLING.md).

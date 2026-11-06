@@ -119,7 +119,7 @@ scan_semgrep() {
   log "Semgrep (SAST: ${SEMGREP_CONFIGS} + security/semgrep.yml)"
   local cfg=(--config security/semgrep.yml)
   for c in ${SEMGREP_CONFIGS}; do cfg+=(--config "$c"); done
-  local common=(--metrics=off --exclude node_modules --exclude .venv --exclude reports --exclude data/security_fixtures --exclude _design_pack)
+  local common=(--metrics=off --exclude node_modules --exclude .venv --exclude reports --exclude data/security_fixtures --exclude _design_pack --exclude .agents --exclude .claude --exclude .cursor)
   if [[ "${USE_DOCKER}" == 1 ]]; then
     drun "${SEMGREP_IMAGE}" semgrep scan "${cfg[@]}" "${common[@]}" --json --output /src/reports/security/semgrep.json --sarif-output /src/reports/security/semgrep.sarif .
   else
