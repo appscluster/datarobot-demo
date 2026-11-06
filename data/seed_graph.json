@@ -1,0 +1,23 @@
+{
+  "nodes": [
+    {"id": "finding:F-101", "type": "finding", "label": "F-101", "tenant_id": "tenant_demo_acme", "props": {"title": "Exposed IP camera management UI; default credentials suspected", "theme": "camera", "gold_band": "high", "asset_ids": ["asset:cam-01"]}},
+    {"id": "asset:cam-01", "type": "asset", "label": "Camera cam-01", "tenant_id": "tenant_demo_acme", "props": {}},
+    {"id": "asset:cam-02", "type": "asset", "label": "Camera cam-02", "tenant_id": "tenant_demo_acme", "props": {}},
+    {"id": "segment:seg-dmz-a", "type": "segment", "label": "DMZ A", "tenant_id": "tenant_demo_acme", "props": {}},
+    {"id": "owner:team-facilities", "type": "owner", "label": "Facilities", "tenant_id": "tenant_demo_acme", "props": {}},
+    {"id": "weakness:WK-CAM-DEFAULT-CRED", "type": "weakness", "label": "Default credentials", "tenant_id": "tenant_demo_acme", "props": {}},
+
+    {"id": "finding:F-901", "type": "finding", "label": "F-901 (foreign)", "tenant_id": "tenant_other_corp", "props": {"title": "Foreign finding", "theme": "camera", "gold_band": "high", "asset_ids": ["asset:oc-01"]}},
+    {"id": "asset:oc-01", "type": "asset", "label": "OtherCorp Cam 01", "tenant_id": "tenant_other_corp", "props": {}},
+    {"id": "segment:oc-seg-1", "type": "segment", "label": "OC Segment", "tenant_id": "tenant_other_corp", "props": {}}
+  ],
+  "edges": [
+    {"src": "asset:cam-01", "type": "HAS_FINDING", "dst": "finding:F-101"},
+    {"src": "asset:cam-01", "type": "SAME_SEGMENT", "dst": "segment:seg-dmz-a"},
+    {"src": "asset:cam-01", "type": "OWNED_BY", "dst": "owner:team-facilities"},
+    {"src": "asset:cam-01", "type": "RELATED_WEAKNESS", "dst": "weakness:WK-CAM-DEFAULT-CRED"},
+
+    {"src": "asset:oc-01", "type": "HAS_FINDING", "dst": "finding:F-901"},
+    {"src": "asset:oc-01", "type": "SAME_SEGMENT", "dst": "segment:oc-seg-1"}
+  ]
+}

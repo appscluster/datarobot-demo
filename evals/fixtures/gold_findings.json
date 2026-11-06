@@ -1,0 +1,365 @@
+{
+  "synthetic": true,
+  "bands": [
+    "info",
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ],
+  "note": "Gold bands are DR-AI-Eng draft labels; PM/Security to review. Eval-only rows need matching nodes in data/seed_graph.json. Eng revision 2026-11-05: F-115\u2192high (PM); added F-121 critical eval-only; gold_factors on ladder rows; enriched some eval must_cite_any. Security-pending bands (F-102/F-106/F-111) unchanged.",
+  "findings": [
+    {
+      "finding_id": "F-101",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Exposed IP camera management UI; default credentials suspected",
+      "theme": "camera",
+      "asset_ids": [
+        "asset:cam-01"
+      ],
+      "gold_band": "high",
+      "must_cite_any": [
+        "asset:cam-01",
+        "segment:seg-dmz-a",
+        "weakness:WK-CAM-DEFAULT-CRED"
+      ],
+      "eval_only": false,
+      "gold_factors": {
+        "exposure": "dmz_mgmt_ui",
+        "auth_state": "default_creds_suspected",
+        "data_sensitivity": "camera_video",
+        "segment_blast": "dmz_neighbors",
+        "owner_criticality": "mapped"
+      }
+    },
+    {
+      "finding_id": "F-102",
+      "tenant_id": "tenant_demo_acme",
+      "title": "PeopleSoft login surface reachable from untrusted segment",
+      "theme": "peoplesoft",
+      "asset_ids": [
+        "asset:ps-web-01"
+      ],
+      "gold_band": "high",
+      "must_cite_any": [
+        "asset:ps-web-01",
+        "segment:seg-corp-b"
+      ],
+      "eval_only": false
+    },
+    {
+      "finding_id": "F-103",
+      "tenant_id": "tenant_demo_acme",
+      "title": "OSINT: username pattern reused across public profiles",
+      "theme": "osint",
+      "asset_ids": [
+        "asset:id-handle-01"
+      ],
+      "gold_band": "medium",
+      "must_cite_any": [
+        "asset:id-handle-01",
+        "owner:team-identity"
+      ],
+      "eval_only": false,
+      "gold_factors": {
+        "exposure": "osint",
+        "auth_state": "n/a",
+        "data_sensitivity": "identity",
+        "segment_blast": "none",
+        "owner_criticality": "generic_user"
+      }
+    },
+    {
+      "finding_id": "F-104",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Camera firmware version matches known weakness catalog entry",
+      "theme": "camera",
+      "asset_ids": [
+        "asset:cam-01"
+      ],
+      "gold_band": "medium",
+      "must_cite_any": [
+        "asset:cam-01",
+        "weakness:CVE-SYNTH-0001"
+      ],
+      "eval_only": false
+    },
+    {
+      "finding_id": "F-105",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Related camera on same segment; same default-cred pattern",
+      "theme": "camera",
+      "asset_ids": [
+        "asset:cam-02"
+      ],
+      "gold_band": "high",
+      "must_cite_any": [
+        "asset:cam-02",
+        "segment:seg-dmz-a",
+        "weakness:WK-CAM-DEFAULT-CRED"
+      ],
+      "eval_only": false,
+      "gold_factors": {
+        "exposure": "dmz_mgmt_ui",
+        "auth_state": "default_creds_suspected",
+        "data_sensitivity": "camera_video",
+        "segment_blast": "dmz_peers",
+        "owner_criticality": "mapped"
+      }
+    },
+    {
+      "finding_id": "F-106",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Orphan asset: no owner mapped",
+      "theme": "hygiene",
+      "asset_ids": [
+        "asset:nvr-01"
+      ],
+      "gold_band": "medium",
+      "must_cite_any": [
+        "asset:nvr-01",
+        "segment:seg-dmz-a"
+      ],
+      "eval_only": false
+    },
+    {
+      "finding_id": "F-107",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Stale finding: prior remediation noted, still open",
+      "theme": "peoplesoft",
+      "asset_ids": [
+        "asset:ps-app-02"
+      ],
+      "gold_band": "medium",
+      "must_cite_any": [
+        "asset:ps-app-02",
+        "asset:host-ps-01"
+      ],
+      "eval_only": false
+    },
+    {
+      "finding_id": "F-108",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Camera mgmt UI exposed; credentials rotated",
+      "theme": "camera",
+      "asset_ids": [
+        "asset:eval-108"
+      ],
+      "gold_band": "low",
+      "must_cite_any": [
+        "asset:eval-108"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-109",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Camera on external segment with default creds suspected",
+      "theme": "camera",
+      "asset_ids": [
+        "asset:eval-109"
+      ],
+      "gold_band": "critical",
+      "must_cite_any": [
+        "asset:eval-109",
+        "segment:seg-external"
+      ],
+      "eval_only": true,
+      "gold_factors": {
+        "exposure": "external",
+        "auth_state": "default_creds_suspected",
+        "data_sensitivity": "camera_video",
+        "segment_blast": "external",
+        "owner_criticality": "mapped"
+      }
+    },
+    {
+      "finding_id": "F-110",
+      "tenant_id": "tenant_demo_acme",
+      "title": "NVR web console reachable from corp segment",
+      "theme": "camera",
+      "asset_ids": [
+        "asset:eval-110"
+      ],
+      "gold_band": "medium",
+      "must_cite_any": [
+        "asset:eval-110",
+        "segment:seg-corp"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-111",
+      "tenant_id": "tenant_demo_acme",
+      "title": "PeopleSoft test instance exposed on DMZ",
+      "theme": "peoplesoft",
+      "asset_ids": [
+        "asset:eval-111"
+      ],
+      "gold_band": "high",
+      "must_cite_any": [
+        "asset:eval-111",
+        "segment:seg-dmz-a"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-112",
+      "tenant_id": "tenant_demo_acme",
+      "title": "PeopleSoft version banner disclosed",
+      "theme": "peoplesoft",
+      "asset_ids": [
+        "asset:eval-112"
+      ],
+      "gold_band": "low",
+      "must_cite_any": [
+        "asset:eval-112"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-113",
+      "tenant_id": "tenant_demo_acme",
+      "title": "PeopleSoft admin path reachable, owner unmapped",
+      "theme": "peoplesoft",
+      "asset_ids": [
+        "asset:eval-113"
+      ],
+      "gold_band": "high",
+      "must_cite_any": [
+        "asset:eval-113"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-114",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Service-account naming pattern visible in public repo metadata",
+      "theme": "osint",
+      "asset_ids": [
+        "asset:eval-114"
+      ],
+      "gold_band": "medium",
+      "must_cite_any": [
+        "asset:eval-114"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-115",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Executive username reuse across public profiles",
+      "theme": "osint",
+      "asset_ids": [
+        "asset:eval-115"
+      ],
+      "gold_band": "high",
+      "must_cite_any": [
+        "asset:eval-115"
+      ],
+      "eval_only": true,
+      "gold_factors": {
+        "exposure": "osint",
+        "auth_state": "n/a",
+        "data_sensitivity": "identity",
+        "segment_blast": "none",
+        "owner_criticality": "executive"
+      }
+    },
+    {
+      "finding_id": "F-116",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Single public profile, no reuse pattern",
+      "theme": "osint",
+      "asset_ids": [
+        "asset:eval-116"
+      ],
+      "gold_band": "info",
+      "must_cite_any": [
+        "asset:eval-116"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-117",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Decommissioned asset still listed as active",
+      "theme": "hygiene",
+      "asset_ids": [
+        "asset:eval-117"
+      ],
+      "gold_band": "low",
+      "must_cite_any": [
+        "asset:eval-117"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-118",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Asset with two conflicting owners",
+      "theme": "hygiene",
+      "asset_ids": [
+        "asset:eval-118"
+      ],
+      "gold_band": "low",
+      "must_cite_any": [
+        "asset:eval-118"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-119",
+      "tenant_id": "tenant_demo_acme",
+      "title": "Camera firmware weakness entry, asset on isolated segment",
+      "theme": "camera",
+      "asset_ids": [
+        "asset:eval-119"
+      ],
+      "gold_band": "low",
+      "must_cite_any": [
+        "asset:eval-119",
+        "segment:seg-isolated",
+        "weakness:WK-CAM-FIRMWARE"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-120",
+      "tenant_id": "tenant_demo_acme",
+      "title": "PeopleSoft login reachable only from admin segment",
+      "theme": "peoplesoft",
+      "asset_ids": [
+        "asset:eval-120"
+      ],
+      "gold_band": "info",
+      "must_cite_any": [
+        "asset:eval-120",
+        "segment:seg-admin"
+      ],
+      "eval_only": true
+    },
+    {
+      "finding_id": "F-121",
+      "tenant_id": "tenant_demo_acme",
+      "title": "PeopleSoft admin path reachable from external segment (synthetic)",
+      "theme": "peoplesoft",
+      "asset_ids": [
+        "asset:ps-admin-ext-01"
+      ],
+      "gold_band": "critical",
+      "must_cite_any": [
+        "asset:ps-admin-ext-01",
+        "segment:seg-external"
+      ],
+      "eval_only": true,
+      "gold_factors": {
+        "exposure": "external",
+        "auth_state": "admin_path_reachable",
+        "data_sensitivity": "erp_hr_finance",
+        "segment_blast": "external",
+        "owner_criticality": "unmapped"
+      }
+    }
+  ]
+}

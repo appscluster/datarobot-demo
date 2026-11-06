@@ -1,0 +1,71 @@
+{
+  "synthetic": true,
+  "tenant_id": "tenant_demo_acme",
+  "k_hops": 2,
+  "questions": [
+    {
+      "id": "Q1",
+      "finding_id": "F-101",
+      "question": "Which other cameras share this segment?",
+      "expect_ids": [
+        "asset:cam-02",
+        "asset:cam-03",
+        "segment:seg-dmz-a"
+      ],
+      "exclude_id_patterns": [
+        "^asset:oc-",
+        "^finding:F-9"
+      ]
+    },
+    {
+      "id": "Q2",
+      "finding_id": "F-101",
+      "question": "Do those cameras have open findings?",
+      "expect_ids": [
+        "finding:F-105"
+      ],
+      "exclude_id_patterns": [
+        "^finding:F-9"
+      ]
+    },
+    {
+      "id": "Q3",
+      "finding_id": "F-101",
+      "question": "Which findings share this weakness?",
+      "expect_ids": [
+        "finding:F-105",
+        "weakness:WK-CAM-DEFAULT-CRED"
+      ],
+      "exclude_id_patterns": []
+    },
+    {
+      "id": "Q4",
+      "finding_id": "F-102",
+      "question": "What host does this app run on, and what else runs there?",
+      "expect_ids": [
+        "asset:host-ps-01",
+        "asset:ps-app-02",
+        "finding:F-107"
+      ],
+      "exclude_id_patterns": []
+    },
+    {
+      "id": "Q5",
+      "finding_id": "F-106",
+      "question": "Who owns the assets near this one?",
+      "expect_ids": [
+        "owner:team-facilities"
+      ],
+      "exclude_id_patterns": []
+    },
+    {
+      "id": "Q6",
+      "finding_id": "F-103",
+      "question": "Which segment exposes this identity asset?",
+      "expect_ids": [
+        "segment:seg-external"
+      ],
+      "exclude_id_patterns": []
+    }
+  ]
+}

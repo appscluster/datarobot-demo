@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "54123:54123"
+    volumes:
+      - ./backend/var:/app/backend/var
+      - ./data:/app/data:ro
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "43123:43123"
+    depends_on:
+      - backend

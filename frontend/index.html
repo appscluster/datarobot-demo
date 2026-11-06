@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ThreatAI Console</title>
+    <script>
+      (function () {
+        try {
+          var p = new URLSearchParams(location.search);
+          var api = p.get('api');
+          if (api) { window.__API_BASE__ = api; }
+          if (!window.__API_BASE__ && (location.hostname === '127.0.0.1' || location.hostname === 'localhost') && location.port === '43123') {
+            window.__API_BASE__ = 'http://127.0.0.1:54123';
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
