@@ -278,3 +278,15 @@ ul.queue li:hover { background: var(--surface-2); }
 /* Audit label truncation */
 .audit-list { list-style: none; padding-left: 0; }
 .audit-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; display: inline-block; }
+
+/* ===== Scanner source badge (Gitleaks, TruffleHog, Trivy, Semgrep, Prowler) ===== */
+.pill.tool-badge {
+  margin-right: var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.meta-chips .pill.mono { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }

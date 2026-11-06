@@ -1,0 +1,26 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC demo fixture (TruffleHog --json lines collected into a list). Values are fake. Verification was disabled, so Verified is false.",
+  "report": [
+    {
+      "SourceMetadata": {"Data": {"Filesystem": {"file": "scripts/legacy_upload.sh", "line": 7}}},
+      "SourceID": 1, "SourceType": 15, "SourceName": "trufflehog - filesystem",
+      "DetectorType": 2, "DetectorName": "AWS", "DecoderName": "PLAIN",
+      "Verified": false,
+      "Raw": "AKIAIOSFODNN7EXAMPLE",
+      "RawV2": "AKIAIOSFODNN7EXAMPLEwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      "Redacted": "AKIAIOSFODNN7EXAMPLE",
+      "ExtraData": {"account": "000000000000", "resource_type": "Access key"},
+      "StructuredData": null
+    },
+    {
+      "SourceMetadata": {"Data": {"Filesystem": {"file": "frontend/src/legacy/slack.ts", "line": 22}}},
+      "SourceID": 1, "SourceType": 15, "SourceName": "trufflehog - filesystem",
+      "DetectorType": 8, "DetectorName": "SlackWebhook", "DecoderName": "PLAIN",
+      "Verified": false,
+      "Raw": "https://hooks.slack.com/services/T00000000/B00000000/SYNTHETICDEMOFAKE000000",
+      "Redacted": "https://hooks.slack.com/services/T00000000/B00000000/****",
+      "ExtraData": null, "StructuredData": null
+    }
+  ]
+}

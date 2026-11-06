@@ -1,0 +1,16 @@
+# Gitleaks config for DataRobot-Demo. Uses the upstream default rules and
+# skips the hand written synthetic fixtures, which contain fake secrets on purpose.
+title = "DataRobot-Demo gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic demo fixtures and generated output"
+paths = [
+  '''data/security_fixtures/.*''',
+  '''reports/.*''',
+  '''frontend/package-lock\.json''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.venv/''',
+]

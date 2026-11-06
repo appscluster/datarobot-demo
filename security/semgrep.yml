@@ -1,0 +1,30 @@
+# Local Semgrep rules for this project. Registry rulesets are passed on the
+# command line by scripts/security_scan.sh (SEMGREP_CONFIGS):
+#   p/python  p/typescript  p/react  p/secrets  p/dockerfile
+rules:
+  - id: threatai-no-raw-secret-in-findings
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A scanner secret field is stored or returned without masking. Use
+      agent.security_sources.mask_secret and keep only rule id, file, line,
+      fingerprint and masked preview.
+    patterns:
+      - pattern-either:
+          - pattern: $X["Secret"]
+          - pattern: $X["Raw"]
+          - pattern: $X["RawV2"]
+      - pattern-not-inside: mask_secret(...)
+      - pattern-not-inside: _scrub_finding(...)
+      - pattern-not-inside: $V = $X.get(...)
+    metadata:
+      cwe: ["CWE-312: Cleartext Storage of Sensitive Information"]
+      category: security
+  - id: threatai-subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: subprocess with shell=True; pass an argument list instead.
+    pattern: subprocess.$F(..., shell=True, ...)
+    metadata:
+      cwe: ["CWE-78: OS Command Injection"]
+      category: security

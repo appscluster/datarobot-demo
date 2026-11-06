@@ -1,0 +1,21 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC demo fixture shaped like semgrep --json. Paths and lines are illustrative.",
+  "report": {
+    "version": "1.184.0",
+    "results": [
+      {"check_id": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true", "path": "services/exporter/run.py",
+       "start": {"line": 41, "col": 5}, "end": {"line": 41, "col": 60},
+       "extra": {"message": "Found 'subprocess' function with 'shell=True'. Use shell=False and pass arguments as a list.",
+                 "severity": "ERROR", "lines": "requires login",
+                 "metadata": {"cwe": ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"], "impact": "HIGH",
+                              "references": ["https://semgrep.dev/r/python.lang.security.audit.subprocess-shell-true"]}}},
+      {"check_id": "typescript.react.security.audit.react-dangerouslysetinnerhtml.react-dangerouslysetinnerhtml", "path": "frontend/src/legacy/Notes.tsx",
+       "start": {"line": 12, "col": 9}, "end": {"line": 12, "col": 50},
+       "extra": {"message": "Detected dangerouslySetInnerHTML with non constant data. Sanitize the HTML or render text.",
+                 "severity": "WARNING", "lines": "requires login",
+                 "metadata": {"cwe": ["CWE-79: Cross-site Scripting"], "impact": "MEDIUM", "references": []}}}
+    ],
+    "errors": []
+  }
+}

@@ -34,3 +34,24 @@ Notes on prompt economics: SSE trace includes metrics fields; in demo mode they 
 ## No Postgres
 
 SQLite only for audit + seed graph JSON.
+
+## Security toolkit (Gitleaks, TruffleHog, Trivy, Semgrep, Prowler)
+
+Five open source scanners check this project's own code, dependencies and
+containers, and their findings flow into the ThreatAI queue with a tool badge.
+
+    make security-scan            # Gitleaks + TruffleHog + Trivy + Semgrep -> reports/security/
+    make scan-secrets             # Gitleaks (redacted) + TruffleHog (verification off)
+    make scan-deps                # Trivy fs: dependency CVEs, Dockerfile config, secrets
+    make scan-sast                # Semgrep: p/python p/typescript p/react p/secrets p/dockerfile
+    make scan-cloud               # Prowler, only with PROWLER_OPT_IN=1 and your own cloud creds
+    make security-ingest          # reports (or synthetic fixtures) -> SQLite + GraphRAG
+    make security-ingest-fixtures # synthetic fixtures only, for an offline demo
+    make test-security            # parser and redaction unit tests
+
+Tools run from pinned official Docker images, or local binaries when Docker is
+missing. Also available as `docker compose --profile security run --rm <tool>`.
+Stored findings never contain a secret value: only rule id, file, line,
+fingerprint and a masked preview. API: `POST /api/security/ingest`
+(`{"source": "auto"|"reports"|"fixtures"}`) and `GET /api/security/summary`.
+Details and safety rules: [security/README.md](security/README.md).

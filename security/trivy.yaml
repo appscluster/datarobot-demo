@@ -1,0 +1,23 @@
+# Trivy config for DataRobot-Demo (filesystem: dependencies, IaC config, secrets)
+scan:
+  scanners:
+    - vuln
+    - misconfig
+    - secret
+  skip-dirs:
+    - node_modules
+    - frontend/node_modules
+    - .venv
+    - data/security_fixtures
+    - reports
+pkg:
+  # the demo runs the Vite dev server, so dev dependencies count
+  include-dev-deps: true
+severity:
+  - UNKNOWN
+  - LOW
+  - MEDIUM
+  - HIGH
+  - CRITICAL
+format: json
+exit-code: 0

@@ -1,0 +1,6 @@
+data/security_fixtures/
+reports/
+node_modules/
+\.venv/
+frontend/dist/
+\.git/

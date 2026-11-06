@@ -1,0 +1,29 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC demo fixture shaped like trivy fs --format json. CVE ids, packages and versions are illustrative.",
+  "report": {
+    "SchemaVersion": 2,
+    "ArtifactName": "DataRobot-Demo",
+    "ArtifactType": "filesystem",
+    "Results": [
+      {
+        "Target": "backend/requirements.txt", "Class": "lang-pkgs", "Type": "pip",
+        "Vulnerabilities": [
+          {"VulnerabilityID": "CVE-2099-0001", "PkgName": "demo-http-lib", "InstalledVersion": "1.2.0", "FixedVersion": "1.2.5",
+           "Severity": "HIGH", "Title": "Synthetic request smuggling issue", "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2099-0001", "CweIDs": ["CWE-444"]},
+          {"VulnerabilityID": "CVE-2099-0002", "PkgName": "demo-yaml", "InstalledVersion": "5.3", "FixedVersion": "",
+           "Severity": "MEDIUM", "Title": "Synthetic unsafe load default", "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2099-0002", "CweIDs": ["CWE-502"]}
+        ]
+      },
+      {
+        "Target": "backend/Dockerfile", "Class": "config", "Type": "dockerfile",
+        "Misconfigurations": [
+          {"Type": "Dockerfile Security Check", "ID": "DS002", "AVDID": "AVD-DS-0002", "Title": "Image user should not be 'root'",
+           "Message": "Specify at least 1 USER command in Dockerfile with non-root user as argument",
+           "Resolution": "Add 'USER <non root user name>' line to the Dockerfile", "Severity": "HIGH", "Status": "FAIL",
+           "PrimaryURL": "https://avd.aquasec.com/misconfig/ds002", "CauseMetadata": {"StartLine": 1}}
+        ]
+      }
+    ]
+  }
+}

@@ -22,3 +22,6 @@ backend/var/
 # Build outputs
 dist/
 build/
+
+# Security scanner output (may contain sensitive text)
+reports/

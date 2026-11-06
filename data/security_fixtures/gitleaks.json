@@ -1,0 +1,30 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC demo fixture. Every value below is fake and was written by hand for the offline demo.",
+  "report": [
+    {
+      "Description": "GitHub Personal Access Token",
+      "StartLine": 14, "EndLine": 14, "StartColumn": 18, "EndColumn": 58,
+      "Match": "token = \"ghp_SYNTHETICxDEMOxFAKExTOKENx0000000000\"",
+      "Secret": "ghp_SYNTHETICxDEMOxFAKExTOKENx0000000000",
+      "File": "services/notifier/config.py",
+      "Commit": "0000000000000000000000000000000000000001",
+      "Entropy": 4.2, "Author": "demo-dev", "Email": "demo-dev@example.invalid",
+      "Date": "2026-10-01T09:00:00Z", "Message": "synthetic commit",
+      "Tags": [], "RuleID": "github-pat",
+      "Fingerprint": "0000000000000000000000000000000000000001:services/notifier/config.py:github-pat:14"
+    },
+    {
+      "Description": "Generic API Key",
+      "StartLine": 3, "EndLine": 3, "StartColumn": 1, "EndColumn": 40,
+      "Match": "PAYMENTS_API_KEY=synthetic_demo_key_not_real_123456",
+      "Secret": "synthetic_demo_key_not_real_123456",
+      "File": "deploy/.env.example",
+      "Commit": "0000000000000000000000000000000000000002",
+      "Entropy": 3.9, "Author": "demo-dev", "Email": "demo-dev@example.invalid",
+      "Date": "2026-10-02T09:00:00Z", "Message": "synthetic commit",
+      "Tags": [], "RuleID": "generic-api-key",
+      "Fingerprint": "0000000000000000000000000000000000000002:deploy/.env.example:generic-api-key:3"
+    }
+  ]
+}

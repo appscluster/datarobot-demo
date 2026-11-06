@@ -1,0 +1,23 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC demo fixture shaped like prowler --output-formats json-ocsf. The account id 000000000000 is fake; no cloud account was audited.",
+  "report": [
+    {"status_code": "FAIL", "severity": "High",
+     "finding_info": {"title": "Ensure S3 buckets block public access", "uid": "prowler-aws-s3_bucket_level_public_access_block-000000000000-eu-west-1-demo-bucket"},
+     "metadata": {"event_code": "s3_bucket_level_public_access_block"},
+     "resources": [{"uid": "arn:aws:s3:::synthetic-demo-bucket", "name": "synthetic-demo-bucket", "type": "AwsS3Bucket", "region": "eu-west-1"}],
+     "cloud": {"provider": "aws", "account": {"uid": "000000000000"}, "region": "eu-west-1"},
+     "remediation": {"desc": "Turn on S3 Block Public Access for the bucket through a reviewed infrastructure change."}},
+    {"status_code": "FAIL", "severity": "Medium",
+     "finding_info": {"title": "Ensure CloudTrail log file validation is enabled", "uid": "prowler-aws-cloudtrail_log_file_validation_enabled-000000000000-eu-west-1-demo-trail"},
+     "metadata": {"event_code": "cloudtrail_log_file_validation_enabled"},
+     "resources": [{"uid": "arn:aws:cloudtrail:eu-west-1:000000000000:trail/synthetic-demo-trail", "name": "synthetic-demo-trail", "region": "eu-west-1"}],
+     "cloud": {"provider": "aws", "account": {"uid": "000000000000"}, "region": "eu-west-1"},
+     "remediation": {"desc": "Enable log file validation on the trail."}},
+    {"status_code": "PASS", "severity": "Low",
+     "finding_info": {"title": "Ensure IAM password policy requires symbols", "uid": "prowler-aws-pass-demo"},
+     "metadata": {"event_code": "iam_password_policy_symbol"},
+     "resources": [{"uid": "arn:aws:iam::000000000000:root", "region": "us-east-1"}],
+     "cloud": {"provider": "aws", "account": {"uid": "000000000000"}}}
+  ]
+}

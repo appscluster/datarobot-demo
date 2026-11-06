@@ -14,9 +14,11 @@ from agent import graph as graph_mod
 from agent import scope as scope_mod
 from agent import runner as runner_mod
 from agent import checker as checker_mod
+from agent import security_sources as sec_mod
 from .otel_stub import init_otel
 from types import SimpleNamespace
 import json
+from pathlib import Path
 
 init_otel()
 app = FastAPI(title="ThreatAI Security Analyst Agent API")
@@ -35,6 +37,25 @@ try:
     graph_mod.load_seed(seed_path)
 except Exception:
     pass
+# Merge ingested scanner findings (Gitleaks, TruffleHog, Trivy, Semgrep, Prowler) if any were ingested
+SECURITY_DB = os.environ.get("SECURITY_DB", str(sec_mod.DEFAULT_DB))
+try:
+    if os.environ.get("SECURITY_AUTOLOAD_FIXTURES") == "1" and not sec_mod.load(SECURITY_DB, SESSION.tenant_id):
+        _fx, _ = sec_mod.collect("fixtures", SESSION.tenant_id)
+        sec_mod.store(_fx, SECURITY_DB)
+    if sec_mod.merge_into_graph(graph_mod._ACTIVE_GRAPH, sec_mod.load(SECURITY_DB)):
+        graph_mod.persist_to_sqlite(Path("backend/var/graph.db"))
+except Exception:
+    pass
+
+
+def _draft_for(n, evidence_ids, finding_id, band):
+    """Remediation draft: scanner findings carry their own remediation text and owner."""
+    text = (n.props.get("remediation") if n else None) or "Rotate default credentials and restrict the management UI to the admin segment."
+    owner = (n.props.get("owner_id") if n else None) or "owner:team-facilities"
+    steps = [{"text": text, "cites": evidence_ids, "owner_id": owner}]
+    cited = sorted({c for s in steps for c in s["cites"]})
+    return {"steps": steps, "summary": f"{band or 'medium'} risk; coordinate with the owning team.", "cited_ids": cited, "non_destructive": True}
 
 # In-memory run queues for SSE
 RUN_QUEUES: Dict[str, asyncio.Queue] = {}
@@ -70,6 +91,7 @@ async def list_findings(status: str = "open", limit: int = 50):
                 "status": n.props.get("status", "open"),
                 "asset_ids": n.props.get("asset_ids", []),
                 "updated_at": n.props.get("updated_at", datetime.utcnow().isoformat()+"Z"),
+                "source_tool": n.props.get("source_tool"),
             })
     return {"findings": rows[:limit]}
 
@@ -85,7 +107,13 @@ async def get_finding(finding_id: str):
     if not v.allowed:
         return JSONResponse(status_code=403, content=v.__dict__)
     evidence = [{"kind": "http", "summary": n.props.get("title", n.label)}]
-    return {"finding": {"finding_id": finding_id, "node_id": node_id, "title": n.props.get("title", n.label), "theme": n.props.get("theme", "camera"), "severity": n.props.get("severity", "medium"), "status": n.props.get("status", "open"), "asset_ids": n.props.get("asset_ids", []), "evidence": evidence, "prior_remediation": None}}
+    out = {"finding_id": finding_id, "node_id": node_id, "title": n.props.get("title", n.label), "theme": n.props.get("theme", "camera"), "severity": n.props.get("severity", "medium"), "status": n.props.get("status", "open"), "asset_ids": n.props.get("asset_ids", []), "evidence": evidence, "prior_remediation": None}
+    if n.props.get("source_tool"):
+        # Scanner finding: location and redacted preview only, never a raw secret
+        out["evidence"] = [{"kind": n.props.get("category", "code"), "summary": n.props.get("title", n.label)}]
+        for k in ("source_tool", "rule_id", "category", "file", "line", "fingerprint", "masked_preview", "references", "synthetic"):
+            out[k] = n.props.get(k)
+    return {"finding": out}
 
 
 @app.post("/api/graph/enrich")
@@ -124,9 +152,8 @@ async def draft_remediation(payload: Dict[str, Any]):
     v = scope_mod.guard(SESSION, "draft_remediation", {"tenant_id": tenant_id, "finding_id": finding_id, "evidence_ids": evidence_ids, "requested_action": "draft remediation"}, run_id=str(uuid.uuid4()))
     if not v.allowed:
         return JSONResponse(status_code=403, content=v.__dict__)
-    steps = [{"text": "Rotate default credentials and restrict the management UI to the admin segment.", "cites": evidence_ids[:2] or [f"finding:{finding_id}"], "owner_id": "owner:team-facilities"}]
-    cited = sorted({c for s in steps for c in s["cites"]})
-    draft = {"steps": steps, "summary": f"{risk_band or 'medium'} risk; coordinate with the owning team.", "cited_ids": cited, "non_destructive": True}
+    n = graph_mod._ACTIVE_GRAPH.get(f"finding:{finding_id}") if graph_mod._ACTIVE_GRAPH else None
+    draft = _draft_for(n, evidence_ids[:2] or [f"finding:{finding_id}"], finding_id, risk_band)
     return {"draft": draft}
 
 
@@ -236,9 +263,8 @@ async def start_run(payload: Dict[str, Any] = Body(...)):
             await q.put({"data": json.dumps(_record({"phase": "operator", "tool": "rank_risk", "result": risk}))})
             _mark("rank")
             evidence_ids = [nn["id"] for nn in sub.get("nodes", [])][:2] or [f"finding:{finding_id}"]
-            steps = [{"text": "Rotate default credentials and restrict the management UI to the admin segment.", "cites": evidence_ids, "owner_id": "owner:team-facilities"}]
-            cited = sorted({c for s in steps for c in s["cites"]})
-            draft = {"steps": steps, "summary": f"{band} risk; coordinate with the owning team.", "cited_ids": cited, "non_destructive": True}
+            draft = _draft_for(n, evidence_ids, finding_id, band)
+            cited = draft["cited_ids"]
             await q.put({"data": json.dumps(_record({"phase": "operator", "tool": "draft_remediation", "result": {"cited_count": len(cited)}}))})
             _mark("draft")
             # Checker
@@ -350,9 +376,8 @@ async def run_simulate(payload: Dict[str, Any] = Body(...)):
     risk = {"band": band, "score": {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.05}.get(band, 0.5), "factors": []}
     rec({"phase": "operator", "tool": "rank_risk", "result": risk})
     evidence_ids = [nn["id"] for nn in sub.get("nodes", [])][:2] or [f"finding:{finding_id}"]
-    steps = [{"text": "Rotate default credentials and restrict the management UI to the admin segment.", "cites": evidence_ids, "owner_id": "owner:team-facilities"}]
-    cited = sorted({c for s in steps for c in s["cites"]})
-    draft = {"steps": steps, "summary": f"{band} risk; coordinate with the owning team.", "cited_ids": cited, "non_destructive": True}
+    draft = _draft_for(n, evidence_ids, finding_id, band)
+    cited = draft["cited_ids"]
     rec({"phase": "operator", "tool": "draft_remediation", "result": {"cited_count": len(cited)}})
     # Checker
     chk = checker_mod.check_draft(draft, sub, tenant_id)
@@ -361,3 +386,28 @@ async def run_simulate(payload: Dict[str, Any] = Body(...)):
     final = {"tenant_id": tenant_id, "finding_id": finding_id, "subgraph": sub, "risk": risk, "draft": draft, "steps": [], "metrics": metrics}
     rec({"final": True, **final})
     return {"history": history, "final": final}
+
+@app.post("/api/security/ingest")
+async def security_ingest(payload: Dict[str, Any] = Body(default={})):
+    """Load scanner reports (reports/security/*.json) or the synthetic fixtures into SQLite
+    and the GraphRAG graph. Reads fixed project folders only; no paths from the request."""
+    source = str((payload or {}).get("source", "auto"))
+    if source not in ("auto", "reports", "fixtures"):
+        raise HTTPException(400, "source must be auto, reports or fixtures")
+    tenant_id = SESSION.tenant_id
+    findings, files = sec_mod.collect(source, tenant_id)
+    sec_mod.store(findings, SECURITY_DB, replace_tenant=tenant_id)
+    sec_mod.remove_from_graph(graph_mod._ACTIVE_GRAPH)
+    sec_mod.merge_into_graph(graph_mod._ACTIVE_GRAPH, sec_mod.load(SECURITY_DB))
+    try:
+        graph_mod.persist_to_sqlite(Path("backend/var/graph.db"))
+    except Exception:
+        pass
+    scope_mod._write_audit(None, tenant_id, None, None, "security_ingest", "allow", "in_scope", None)
+    return {"ingested": len(findings), "files": [Path(f).name for f in files], "summary": sec_mod.summary(findings)}
+
+
+@app.get("/api/security/summary")
+async def security_summary():
+    rows = sec_mod.load(SECURITY_DB, SESSION.tenant_id)
+    return {"tenant_id": SESSION.tenant_id, "total": len(rows), "by_tool": sec_mod.summary(rows)}

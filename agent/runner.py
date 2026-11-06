@@ -58,7 +58,9 @@ def _operator(state: TriageState, sink: Callable[[Dict[str, Any]], None]) -> Tri
     _emit(sink, {"phase": "operator", "tool": "rank_risk", "result": risk})
     # Draft remediation
     evidence_ids = [n["id"] for n in sub.get("nodes", [])][:2] or [f"finding:{finding_id}"]
-    steps = [{"text": "Rotate default credentials and restrict the management UI to the admin segment.", "cites": evidence_ids, "owner_id": "owner:team-facilities"}]
+    text = (n.props.get("remediation") if n else None) or "Rotate default credentials and restrict the management UI to the admin segment."
+    owner = (n.props.get("owner_id") if n else None) or "owner:team-facilities"
+    steps = [{"text": text, "cites": evidence_ids, "owner_id": owner}]
     cited = sorted({c for s in steps for c in s["cites"]})
     draft = {"steps": steps, "summary": f"{band} risk; coordinate with the owning team.", "cited_ids": cited, "non_destructive": True}
     state["draft"] = draft

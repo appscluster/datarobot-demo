@@ -9,6 +9,13 @@ type Finding = {
   status: string
   asset_ids: string[]
   updated_at: string
+  source_tool?: string | null
+}
+
+const TOOL_LABEL: Record<string, string> = {gitleaks: 'Gitleaks', trufflehog: 'TruffleHog', trivy: 'Trivy', semgrep: 'Semgrep', prowler: 'Prowler'}
+function ToolBadge({tool}:{tool?: string | null}) {
+  if (!tool) return null
+  return <span className="pill tool-badge" data-tool={tool} title={`Source: ${TOOL_LABEL[tool] || tool} (open source scanner)`}>{TOOL_LABEL[tool] || tool}</span>
 }
 
 type RunEvent = { event: string; data: any }
@@ -291,6 +298,7 @@ export function App() {
                 <div>
                   <div className="title">
                     <span className={`pill ${sevClass(f.severity)}`} style={{marginRight:8}}>{(f.severity||'').toLowerCase()}</span>
+                    <ToolBadge tool={f.source_tool} />
                     {f.title}
                   </div>
                   <div className="meta">
@@ -348,11 +356,21 @@ export function App() {
             {detail ? (
               <div>
                 <div className="finding-title"><span className={`pill ${sevClass(detail.severity)}`} style={{marginRight:8}}>{(detail.severity||'').toLowerCase()}</span>{detail.title}</div>
+                {detail.source_tool ? (
+                <div className="meta-chips">
+                  <ToolBadge tool={detail.source_tool} />
+                  <span className="pill mono" title={detail.rule_id}>{String(detail.rule_id||'').split('.').pop()}</span>
+                  {detail.file && <span className="pill mono">{detail.file}{detail.line ? `:${detail.line}` : ''}</span>}
+                  {detail.masked_preview && <span className="pill mono" title="Secret value is never stored">{detail.masked_preview}</span>}
+                  {detail.synthetic && <span className="pill">Synthetic</span>}
+                </div>
+                ) : (
                 <div className="meta-chips">
                   <span className="pill">Asset cam-01</span>
                   <span className="pill">Owner Facilities</span>
                   <span className="pill">Segment DMZ A</span>
                 </div>
+                )}
               </div>
             ) : <div>Loading...</div>}
           </section>
@@ -449,9 +467,14 @@ export function App() {
                 <span style={{display:'inline-flex', alignItems:'center', gap:6, marginRight:12}}>
                   <span style={{width:8, height:8, borderRadius:8, background:'#B084EB', display:'inline-block'}}></span> owner
                 </span>
-                <span style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                <span style={{display:'inline-flex', alignItems:'center', gap:6, marginRight:12}}>
                   <span style={{width:8, height:8, borderRadius:8, background:'#E5484D', display:'inline-block'}}></span> weakness
                 </span>
+                {(subgraph?.nodes||[]).some((n:any)=> String(n.id).startsWith('tool:')) && (
+                <span style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                  <span style={{width:8, height:8, borderRadius:8, background:'var(--muted)', display:'inline-block'}}></span> tool
+                </span>
+                )}
               </div>
               <div style={{marginTop:8}}>
                 <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
