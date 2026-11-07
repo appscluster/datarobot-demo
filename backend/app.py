@@ -16,6 +16,10 @@ from agent import runner as runner_mod
 from agent import checker as checker_mod
 from agent import security_sources as sec_mod
 from agent import retrieval as retrieval_mod
+from agent.cases import finding_context
+from agent.delivery import deliver
+from agent.promotion import request_promotion
+from agent.scoring import load_scoring
 from .otel_stub import init_otel
 from types import SimpleNamespace
 import json
@@ -50,13 +54,37 @@ except Exception:
     pass
 
 
-def _draft_for(n, evidence_ids, finding_id, band):
-    """Remediation draft: scanner findings carry their own remediation text and owner."""
-    text = (n.props.get("remediation") if n else None) or "Rotate default credentials and restrict the management UI to the admin segment."
-    owner = (n.props.get("owner_id") if n else None) or "owner:team-facilities"
-    steps = [{"text": text, "cites": evidence_ids, "owner_id": owner}]
-    cited = sorted({c for s in steps for c in s["cites"]})
-    return {"steps": steps, "summary": f"{band or 'medium'} risk; coordinate with the owning team.", "cited_ids": cited, "non_destructive": True}
+def _factors_for(n):
+    """Readable factors from the seeded gold labels. Empty when the node has none."""
+    gf = (n.props.get("gold_factors") if n else None) or {}
+    if isinstance(gf, dict) and gf:
+        return [{"name": str(k).replace("_", " "), "value": str(v)} for k, v in gf.items()]
+    return []
+
+
+def _risk_for(n):
+    band = (n.props.get("gold_band") if n else "medium") if n else "medium"
+    score = {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.05}.get(band, 0.5)
+    return {"band": band, "score": score, "factors": _factors_for(n)}
+
+
+def _draft_for(n, evidence_ids, finding_id, band, subgraph=None):
+    """Reply text comes from the model. Citations are limited to the graph."""
+    from agent import reply as reply_mod
+    sub = subgraph or {"nodes": [{"id": c} for c in evidence_ids], "edges": []}
+    nodes = [{"id": node.get("id"), "type": node.get("type"), "label": node.get("label")} for node in sub.get("nodes", [])]
+    edges = [{"src": edge.get("src"), "type": edge.get("type"), "dst": edge.get("dst")} for edge in sub.get("edges", [])]
+    draft, _metrics = reply_mod.draft_case(
+        finding_id=finding_id,
+        title=(n.props.get("title") if n else "") or finding_id,
+        ask=(n.props.get("ask") if n else "") or "",
+        band=band,
+        nodes=nodes,
+        edges=edges,
+        evidence_ids=evidence_ids,
+        owner_id=(n.props.get("owner_id") if n else None) or "owner:team-facilities",
+    )
+    return draft
 
 # In-memory run queues for SSE
 RUN_QUEUES: Dict[str, asyncio.Queue] = {}
@@ -84,13 +112,17 @@ async def list_findings(status: str = "open", limit: int = 50):
     rows = []
     for n in g._nodes.values():
         if n.type == "finding" and n.tenant_id == tenant_id:
+            asset_ids = n.props.get("asset_ids", [])
+            asset = g.get(asset_ids[0]) if asset_ids else None
             rows.append({
                 "finding_id": n.id.split(":", 1)[1],
                 "node_id": n.id,
                 "title": n.props.get("title", n.label),
+                "ask": n.props.get("ask"),
                 "severity": n.props.get("severity", "medium"),
                 "status": n.props.get("status", "open"),
-                "asset_ids": n.props.get("asset_ids", []),
+                "asset_ids": asset_ids,
+                "asset_label": asset.label if asset else None,
                 "updated_at": n.props.get("updated_at", datetime.utcnow().isoformat()+"Z"),
                 "source_tool": n.props.get("source_tool"),
             })
@@ -108,7 +140,12 @@ async def get_finding(finding_id: str):
     if not v.allowed:
         return JSONResponse(status_code=403, content=v.__dict__)
     evidence = [{"kind": "http", "summary": n.props.get("title", n.label)}]
-    out = {"finding_id": finding_id, "node_id": node_id, "title": n.props.get("title", n.label), "theme": n.props.get("theme", "camera"), "severity": n.props.get("severity", "medium"), "status": n.props.get("status", "open"), "asset_ids": n.props.get("asset_ids", []), "evidence": evidence, "prior_remediation": None}
+    asset_ids = n.props.get("asset_ids", [])
+    asset = graph_mod._ACTIVE_GRAPH.get(asset_ids[0]) if asset_ids and graph_mod._ACTIVE_GRAPH else None
+    out = {"finding_id": finding_id, "node_id": node_id, "title": n.props.get("title", n.label), "ask": n.props.get("ask"), "theme": n.props.get("theme", "request"), "severity": n.props.get("severity", "medium"), "status": n.props.get("status", "open"), "asset_ids": asset_ids, "asset_label": asset.label if asset else None, "evidence": evidence, "prior_remediation": None}
+    ctx = finding_context(finding_id)
+    out["audience"] = ctx["audience"]
+    out["pipeline"] = ctx["pipeline"]
     if n.props.get("source_tool"):
         # Scanner finding: location and redacted preview only, never a raw secret
         out["evidence"] = [{"kind": n.props.get("category", "code"), "summary": n.props.get("title", n.label)}]
@@ -160,7 +197,12 @@ async def draft_remediation(payload: Dict[str, Any]):
 
 @app.post("/api/check_scope")
 async def check_scope(payload: Dict[str, Any]):
-    verdict = scope_mod.check_scope(payload.get("tenant_id"), payload.get("requested_action", ""), payload.get("target_ids", []))
+    action = payload.get("requested_action", "")
+    verdict = scope_mod.check_scope(payload.get("tenant_id"), action, payload.get("target_ids", []))
+    if "shut the model down" in action.lower():
+        state = load_scoring(str(Path(__file__).resolve().parents[1] / "data" / "scoring_state.json"))
+        after, reason = request_promotion(state, SESSION.actor)
+        verdict = {**verdict, "allowed": False, "reason": reason, "live_model": after.live_model}
     return {"verdict": verdict}
 
 
@@ -186,6 +228,9 @@ async def record_decision(payload: Dict[str, Any]):
             return JSONResponse(status_code=403, content={"allowed": False, "reason": "finding_mismatch"})
         if str(final.get("tenant_id")) != str(SESSION.tenant_id):
             return JSONResponse(status_code=403, content={"allowed": False, "reason": "cross_tenant"})
+    audience = finding_context(str(finding_id))["audience"] if finding_id else "Credit risk"
+    item = deliver(decision, audience, bool(run_id and run_id in RUN_RESULTS))
+    note = item.note
     # Scope guard (tenant, actor, destructive notes, cross-tenant references)
     v = scope_mod.guard(SESSION, "record_decision", {"tenant_id": tenant_id, "run_id": run_id, "finding_id": finding_id, "decision": decision, "actor": actor, "note": note}, run_id=run_id)
     if not v.allowed:
@@ -202,7 +247,7 @@ async def record_decision(payload: Dict[str, Any]):
     )
     con.commit()
     con.close()
-    return {"record": {"decision_id": decision_id, "run_id": run_id, "tenant_id": tenant_id, "finding_id": finding_id, "decision": decision.title(), "actor": actor, "ts": ts}}
+    return {"record": {"decision_id": decision_id, "run_id": run_id, "tenant_id": tenant_id, "finding_id": finding_id, "decision": decision.title(), "actor": actor, "ts": ts}, "delivery": {"queue": item.queue, "sent": item.sent, "note": item.note}}
 
 
 @app.post("/api/runs")
@@ -235,48 +280,26 @@ async def start_run(payload: Dict[str, Any] = Body(...)):
                 ev = {**ev, "seq": RUN_SEQ[run_id]}
                 RUN_HISTORY[run_id].append(ev)
                 return ev
-            def _mark(step: str):
-                try:
-                    from pathlib import Path
-                    Path("/opt/cursor/artifacts").mkdir(parents=True, exist_ok=True)
-                    with open(f"/opt/cursor/artifacts/sse_progress_{run_id}.log","a") as f:
-                        f.write(step + "\\n")
-                except Exception:
-                    pass
-            # Metrics
-            metrics = {"prefix_tokens": 1200, "suffix_tokens": 300, "cached_tokens": 1100, "cache_hit_ratio": 0.9, "input_cost_usd": 0.0025}
-            metrics["prompt_tokens"] = metrics["prefix_tokens"] + metrics["suffix_tokens"]
-            metrics["usd_estimate"] = metrics["input_cost_usd"]
-            metrics["demo_simulated_metrics"] = True
-            await q.put({"data": json.dumps(_record({"phase": "metrics", "metrics": metrics}))})
-            _mark("metrics")
-            # Planner
-            v = scope_mod.check_scope(tenant_id, "triage finding", [f"finding:{finding_id}"])
-            await q.put({"data": json.dumps(_record({"phase": "planner", "verdict": v}))})
-            _mark("planner")
-            # Operator: enrich + rank_risk + draft
-            sub = retrieval_mod.retrieve(tenant_id, finding_id, k=2, question=None)
-            await q.put({"data": json.dumps(_record({"phase": "operator", "tool": "enrich_asset_graph", "result": {"subgraph_nodes": len(sub.get("nodes", []))}}))})
-            _mark("enrich")
-            n = graph_mod._ACTIVE_GRAPH.get(f"finding:{finding_id}") if graph_mod._ACTIVE_GRAPH else None
-            band = (n.props.get("gold_band") if n else "medium") if n else "medium"
-            risk = {"band": band, "score": {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.05}.get(band, 0.5), "factors": []}
-            await q.put({"data": json.dumps(_record({"phase": "operator", "tool": "rank_risk", "result": risk}))})
-            _mark("rank")
-            evidence_ids = [nn["id"] for nn in sub.get("nodes", [])][:2] or [f"finding:{finding_id}"]
-            draft = _draft_for(n, evidence_ids, finding_id, band)
-            cited = draft["cited_ids"]
-            await q.put({"data": json.dumps(_record({"phase": "operator", "tool": "draft_remediation", "result": {"cited_count": len(cited)}}))})
-            _mark("draft")
-            # Checker
-            chk = checker_mod.check_draft(draft, sub, tenant_id)
-            await q.put({"data": json.dumps(_record({"phase": "checker", "result": {"passed": chk.passed, "issues": chk.issues}}))})
-            _mark("checker")
-            # Final
-            final = {"tenant_id": tenant_id, "finding_id": finding_id, "subgraph": sub, "risk": risk, "draft": draft, "steps": [], "metrics": metrics}
+            loop = asyncio.get_running_loop()
+
+            def _sink(evt: Dict[str, Any]) -> None:
+                recorded = _record(evt)
+                loop.call_soon_threadsafe(q.put_nowait, {"data": json.dumps(recorded)})
+
+            state = await asyncio.to_thread(runner_mod.run_triage, tenant_id, finding_id, _sink)
+            final = {
+                "tenant_id": tenant_id,
+                "finding_id": finding_id,
+                "subgraph": state.get("subgraph"),
+                "risk": state.get("risk"),
+                "draft": state.get("draft"),
+                "steps": state.get("steps") or [],
+                "metrics": state.get("metrics"),
+                "refused": state.get("refused"),
+                "refusal_reason": state.get("refusal_reason"),
+            }
             RUN_RESULTS[run_id] = final
             await q.put({"data": json.dumps(_record({"final": True, **final}))})
-            _mark("final")
         except Exception as e:
             # Persist error details to artifacts and emit an error event
             try:
@@ -360,31 +383,16 @@ async def run_simulate(payload: Dict[str, Any] = Body(...)):
     def rec(ev: Dict[str, Any]):
         ev = {**ev, "seq": len(history) + 1}
         history.append(ev)
-    # Metrics
-    metrics = {"prefix_tokens": 1200, "suffix_tokens": 300, "cached_tokens": 1100, "cache_hit_ratio": 0.9, "input_cost_usd": 0.0025}
-    metrics["prompt_tokens"] = metrics["prefix_tokens"] + metrics["suffix_tokens"]
-    metrics["usd_estimate"] = metrics["input_cost_usd"]
-    metrics["demo_simulated_metrics"] = True
-    rec({"phase": "metrics", "metrics": metrics})
-    # Planner
-    v = scope_mod.check_scope(tenant_id, "triage finding", [f"finding:{finding_id}"])
-    rec({"phase": "planner", "verdict": v})
-    # Operator
-    sub = retrieval_mod.retrieve(tenant_id, finding_id, k=2, question=None)
-    rec({"phase": "operator", "tool": "enrich_asset_graph", "result": {"subgraph_nodes": len(sub.get("nodes", []))}})
-    n = graph_mod._ACTIVE_GRAPH.get(f"finding:{finding_id}") if graph_mod._ACTIVE_GRAPH else None
-    band = (n.props.get("gold_band") if n else "medium") if n else "medium"
-    risk = {"band": band, "score": {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.05}.get(band, 0.5), "factors": []}
-    rec({"phase": "operator", "tool": "rank_risk", "result": risk})
-    evidence_ids = [nn["id"] for nn in sub.get("nodes", [])][:2] or [f"finding:{finding_id}"]
-    draft = _draft_for(n, evidence_ids, finding_id, band)
-    cited = draft["cited_ids"]
-    rec({"phase": "operator", "tool": "draft_remediation", "result": {"cited_count": len(cited)}})
-    # Checker
-    chk = checker_mod.check_draft(draft, sub, tenant_id)
-    rec({"phase": "checker", "result": {"passed": chk.passed, "issues": chk.issues}})
-    # Final
-    final = {"tenant_id": tenant_id, "finding_id": finding_id, "subgraph": sub, "risk": risk, "draft": draft, "steps": [], "metrics": metrics}
+    state = runner_mod.run_triage(tenant_id, finding_id, rec)
+    final = {
+        "tenant_id": tenant_id,
+        "finding_id": finding_id,
+        "subgraph": state.get("subgraph"),
+        "risk": state.get("risk"),
+        "draft": state.get("draft"),
+        "steps": state.get("steps") or [],
+        "metrics": state.get("metrics"),
+    }
     rec({"final": True, **final})
     return {"history": history, "final": final}
 

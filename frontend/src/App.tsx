@@ -8,6 +8,7 @@ type Finding = {
   severity: string
   status: string
   asset_ids: string[]
+  asset_label?: string | null
   updated_at: string
   source_tool?: string | null
 }
@@ -20,7 +21,7 @@ function ToolBadge({tool}:{tool?: string | null}) {
 
 type RunEvent = { event: string; data: any }
 
-export function App() {
+export function App({ onSignOut }: { onSignOut?: () => void }) {
   const [session, setSession] = React.useState<any>(null)
   const [findings, setFindings] = React.useState<Finding[]>([])
   const [selected, setSelected] = React.useState<string | null>(null)
@@ -33,13 +34,17 @@ export function App() {
   const [scopeText, setScopeText] = React.useState('')
   const [scopeVerdict, setScopeVerdict] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(false)
-  const [graphOpen, setGraphOpen] = React.useState(false)
   const [lastRunId, setLastRunId] = React.useState<string | null>(null)
   const [severityFilter, setSeverityFilter] = React.useState<string>('all')
   const [isMobile, setIsMobile] = React.useState<boolean>(false)
   const [activeMobileTab, setActiveMobileTab] = React.useState<'overview'|'run'|'graph'>('overview')
   const [eventTimes, setEventTimes] = React.useState<number[]>([])
   const [expanded, setExpanded] = React.useState<Record<number, boolean>>({})
+  const [running, setRunning] = React.useState(false)
+  const [decisionNote, setDecisionNote] = React.useState<string | null>(null)
+  const traceRef = React.useRef<HTMLDivElement | null>(null)
+  const runToken = React.useRef(0)
+  const streamRef = React.useRef<EventSource | null>(null)
 
   const API = React.useMemo(()=> getApiBase(), [])
   const RUNS = React.useMemo(()=> getRunsBase(), [])
@@ -47,7 +52,13 @@ export function App() {
   React.useEffect(() => {
     fetch(`${API}/api/session`).then(r => r.json()).then(setSession).catch(()=>{})
     fetch(`${API}/api/findings`).then(r => r.json()).then(d => setFindings(d.findings || [])).catch(()=>{})
+    fetch(`${API}/api/audit`).then(r => r.json()).then(d => setAudit(d.audit || [])).catch(()=>{})
   }, [API])
+
+  React.useEffect(() => {
+    if (isMobile || selected || findings.length === 0) return
+    setSelected(findings[0].finding_id)
+  }, [findings, isMobile, selected])
 
   React.useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
@@ -59,67 +70,107 @@ export function App() {
 
   React.useEffect(() => {
     if (!selected) return
+    runToken.current += 1
+    streamRef.current?.close()
+    streamRef.current = null
+    setRunning(false)
+    setDecisionNote(null)
+    setScopeVerdict(null)
     setDetail(null); setSubgraph(null); setRisk(null); setDraft(null); setEvents([]); setEventTimes([]); setExpanded({})
     fetch(`${API}/api/findings/${selected}`).then(r => r.json()).then(d => setDetail(d.finding)).catch(()=>{})
-    fetch(`${API}/api/graph/enrich`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({tenant_id: session?.tenant_id, finding_id: selected, k_hops: 2})})
+    fetch(`${API}/api/graph/enrich`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({tenant_id: session?.tenant_id, finding_id: selected, k_hops: 3})})
       .then(r=>r.json()).then(d=> setSubgraph(d.subgraph)).catch(()=>{})
   }, [selected, session?.tenant_id, API])
 
-  function onKey(e: React.KeyboardEvent) {
-    if (!findings.length) return
-    const idx = selected ? findings.findIndex(f=>f.finding_id===selected) : -1
-    if (e.key === 'j') {
-      const n = Math.min(idx+1, findings.length-1)
-      setSelected(findings[n]?.finding_id ?? findings[0]?.finding_id)
+  React.useEffect(() => {
+    function onWin(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (!findings.length) return
+      if (e.key !== 'j' && e.key !== 'k') return
+      const idx = selected ? findings.findIndex(f=>f.finding_id===selected) : -1
+      if (e.key === 'j') {
+        const n = Math.min(idx+1, findings.length-1)
+        setSelected(findings[n]?.finding_id ?? findings[0]?.finding_id)
+      }
+      if (e.key === 'k') {
+        const n = Math.max(idx-1, 0)
+        setSelected(findings[n]?.finding_id ?? findings[0]?.finding_id)
+      }
     }
-    if (e.key === 'k') {
-      const n = Math.max(idx-1, 0)
-      setSelected(findings[n]?.finding_id ?? findings[0]?.finding_id)
-    }
-  }
+    window.addEventListener('keydown', onWin)
+    return () => window.removeEventListener('keydown', onWin)
+  }, [findings, selected])
+
+  React.useEffect(() => {
+    const last = traceRef.current?.querySelector('li:last-child')
+    last?.scrollIntoView({block: 'nearest'})
+  }, [events])
 
   async function triageRun() {
-    if (!selected) return
-    setEvents([]); setRisk(null); setDraft(null)
-    const r = await fetch(`${API}/api/runs`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({finding_id: selected})}).then(r=>r.json())
-    const runId = r.run_id
-    setLastRunId(runId)
-    const es = new EventSource(`${RUNS}/runs/${runId}/events`)
-    // Expose a debug window buffer for SSE provenance capture
-    ;(window as any).__SSE_EVENTS__ = (window as any).__SSE_EVENTS__ || []
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data)
-        const kind = (data && data.phase) ? 'step' : ev.type || 'message'
-        // Debug log
-        try { console.log('[sse]', kind, (data && data.phase) ? data.phase : ''); } catch {}
-        ;(window as any).__SSE_EVENTS__.push({event: kind, data})
-        // Reflect risk/draft/subgraph if present in payload (final event payload)
+    if (!selected || running) return
+    const token = ++runToken.current
+    streamRef.current?.close()
+    streamRef.current = null
+    setRunning(true)
+    setDecisionNote(null)
+    setEvents([]); setRisk(null); setDraft(null); setEventTimes([]); setExpanded({})
+    try {
+      const resp = await fetch(`${API}/api/runs`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({finding_id: selected})})
+      const body = await resp.json().catch(() => ({}))
+      if (token !== runToken.current) return
+      const runId = body.run_id
+      if (!resp.ok || !runId) {
+        setRunning(false)
+        return
+      }
+      setLastRunId(runId)
+      const es = new EventSource(`${RUNS}/runs/${runId}/events`)
+      streamRef.current = es
+      ;(window as any).__SSE_EVENTS__ = (window as any).__SSE_EVENTS__ || []
+      const pushEvent = (kind: string, data: any) => {
+        if (token !== runToken.current) return
+        if (data && data.event === 'done') {
+          es.close()
+          if (streamRef.current === es) streamRef.current = null
+          setRunning(false)
+          return
+        }
+        if (data && data.error) {
+          es.close()
+          if (streamRef.current === es) streamRef.current = null
+          setRunning(false)
+        }
         if (data && (data.risk || data.draft)) {
-          try { console.log('[sse]', 'final(set)'); } catch {}
           setRisk(data.risk); setDraft(data.draft); if (data.subgraph) setSubgraph(data.subgraph)
         }
-        setEvents(prev => [...prev, {event: kind, data}]); setEventTimes(prev => [...prev, Date.now()])
-      } catch { /* ignore */ }
+        setEvents(prev => {
+          if (data && data.seq && prev.some(e => e.data && e.data.seq === data.seq)) return prev
+          setEventTimes(t => [...t, Date.now()])
+          return [...prev, {event: kind, data}]
+        })
+        if (data && data.final) setRunning(false)
+      }
+      const onAny = (kindFallback: string) => (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data)
+          const kind = (data && data.phase) ? 'step' : (data && data.final) ? 'final' : kindFallback
+          try { console.log('[sse]', kind, (data && data.phase) ? data.phase : ''); } catch {}
+          ;(window as any).__SSE_EVENTS__.push({event: kind, data})
+          pushEvent(kind, data)
+        } catch { /* ignore */ }
+      }
+      es.onmessage = onAny('message')
+      es.addEventListener('step', onAny('step') as EventListener)
+      es.addEventListener('final', onAny('final') as EventListener)
+      es.onerror = () => {
+        if (token !== runToken.current) return
+        if (es.readyState === EventSource.CONNECTING) return
+        setRunning(false)
+      }
+    } catch {
+      if (token === runToken.current) setRunning(false)
     }
-    es.addEventListener('step', (ev:any) => {
-      try {
-        const data = JSON.parse(ev.data)
-        try { console.log('[sse]', 'step', data?.phase || ''); } catch {}
-        ;(window as any).__SSE_EVENTS__.push({event: 'step', data})
-        setEvents(prev => [...prev, {event: 'step', data}]); setEventTimes(prev => [...prev, Date.now()])
-      } catch {}
-    })
-    es.addEventListener('final', (ev:any) => {
-      try {
-        const data = JSON.parse(ev.data)
-        setRisk(data.risk); setDraft(data.draft); setSubgraph(data.subgraph)
-        setEvents(prev => [...prev, {event:'final', data}]); setEventTimes(prev => [...prev, Date.now()])
-        try { console.log('[sse]', 'final'); } catch {}
-        ;(window as any).__SSE_EVENTS__.push({event: 'final', data})
-      } catch {}
-    })
-    // Fallback: close on 'done' marker message seen by onmessage
   }
 
   // Mirror rendered events into debug buffer to guarantee provenance capture
@@ -137,10 +188,18 @@ export function App() {
       const r = await fetch(`${API}/api/decisions`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
       if (r.status===403) {
         const v = await r.json()
-        alert(`Refused: ${v.reason}`)
+        setDecisionNote(`Refused: ${v.reason}`)
+        return
       }
+      if (!r.ok) {
+        setDecisionNote('The decision did not save.')
+        return
+      }
+      const saved = await r.json()
+      setDecisionNote(saved.delivery?.note || 'The decision did not save.')
     } finally {
       setLoading(false)
+      refreshAudit()
     }
   }
 
@@ -149,10 +208,13 @@ export function App() {
     setAudit(r.audit || [])
   }
 
-  async function screenScope() {
-    const body = {tenant_id: session?.tenant_id, requested_action: scopeText, target_ids: []}
+  async function screenScope(action?: string, targetIds: string[] = []) {
+    const requested = action ?? scopeText
+    if (action !== undefined) setScopeText(action)
+    const body = {tenant_id: session?.tenant_id, requested_action: requested, target_ids: targetIds}
     const v = await fetch(`${API}/api/check_scope`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json())
     setScopeVerdict(v.verdict)
+    refreshAudit()
   }
 
   function formatRelative(iso: string): string {
@@ -174,13 +236,12 @@ export function App() {
   }
 
   const approveDisabled = !lastRunId || !risk || !draft
-  const approveTitle = approveDisabled ? 'Requires a completed, checker-passed run' : undefined
   const filtered = findings.filter(f => severityFilter==='all' ? true : (f.severity||'').toLowerCase()===severityFilter)
   const openCount = findings.length
 
   function tenantDisplay(tid?: string): string {
     if (!tid) return ''
-    if (tid.includes('tenant_demo_acme')) return 'Acme (demo)'
+    if (tid.includes('tenant_demo_acme')) return 'Emirates NBD Demo'
     return tid
   }
   function actorDisplay(a?: string): {initials: string, name: string} {
@@ -226,7 +287,11 @@ export function App() {
     if (d?.phase === 'operator' && d?.tool === 'draft_remediation') return `Cited ${d?.result?.cited_count ?? 0} ids`
     if (d?.phase === 'checker') return d?.result?.passed ? 'Draft OK' : `Issues: ${(d?.result?.issues || []).join(',')}`
     if (d?.final) return `Band ${d?.risk?.band}; cites ${d?.draft?.cited_ids?.length || 0}`
-    if (d?.phase === 'metrics') return `Tokens ${d?.metrics?.prompt_tokens}${d?.metrics?.demo_simulated_metrics ? ' (simulated)' : ''}`
+    if (d?.phase === 'metrics') {
+      const model = d?.metrics?.model ? ` · ${d.metrics.model}` : ''
+      const via = d?.metrics?.provider === 'omniroute' ? ' · OmniRoute' : ''
+      return `Tokens ${d?.metrics?.prompt_tokens}${model}${via}${d?.metrics?.demo_simulated_metrics ? ' (simulated)' : ''}`
+    }
     return ''
   }
   function stepAttrPhase(e: RunEvent): string | undefined {
@@ -251,19 +316,22 @@ export function App() {
     return {};
   }, [isMobile, selected]);
 
+  const segmentLabel = (subgraph?.nodes || []).find((n: any) => n.type === 'segment')?.label
+  const ownerLabel = (subgraph?.nodes || []).find((n: any) => n.type === 'owner')?.label
+
   return (
-    <div className="app" onKeyDown={onKey} tabIndex={0} style={appStyle}>
+    <div className="app" tabIndex={0} style={appStyle}>
       <div className="hdr panel" role="banner" id="hdr">
         <div className="hdr-left">
-          <strong className="brand">ThreatAI</strong>
+          <strong className="brand">Casework</strong>
           <span className="demo-badge">Demo</span>
-          <span className="tenant-badge" id="session-tenant">{tenantDisplay(session?.tenant_id)} ▾</span>
+          <span className="tenant-badge" id="session-tenant">{tenantDisplay(session?.tenant_id)}</span>
+          <span className="tagline">Read the request. Draft the reply. Send nothing until you decide.</span>
         </div>
         <div className="hdr-right">
           <span className="tenant-badge" id="session-actor">{actor.name}</span>
-          <div className="avatar" aria-label="Analyst avatar" title={actor.name}>
-            {actor.initials}
-          </div>
+          {onSignOut && <button className="btn small" type="button" onClick={onSignOut}>Sign out</button>}
+          <div className="avatar" aria-label="Analyst avatar" title={actor.name}>{actor.initials}</div>
         </div>
       </div>
 
@@ -279,7 +347,7 @@ export function App() {
           }} />
         </div>
         <div className="q-header">
-          <div>Findings · {openCount} open</div>
+          <div>Requests · {openCount} open</div>
         </div>
         <div className="filters" role="group" aria-label="Severity filters">
           {['all','critical','high','medium','low'].map(s=>(
@@ -288,6 +356,7 @@ export function App() {
         </div>
         <div className="q-list panel-body">
           <ul className="queue" data-testid="queue" aria-label="Queue list">
+            {filtered.length === 0 && <li className="hint empty-queue">No requests at this priority.</li>}
             {filtered.map(f => (
               <li key={f.finding_id}
                   onClick={()=>{ setSelected(f.finding_id); if (isMobile) setActiveMobileTab('overview') }}
@@ -301,12 +370,13 @@ export function App() {
                     <ToolBadge tool={f.source_tool} />
                     {f.title}
                   </div>
+                  <div className="reason">{caseReason(f.finding_id)}</div>
                   <div className="meta">
-                    <span>{f.asset_ids?.[0] || 'asset:unknown'}</span>
+                    <span className="mono">{f.finding_id}</span>
+                    <span>{f.asset_label || assetShort(f.asset_ids?.[0])}</span>
                     <span className="status-open">{f.status}</span>
                   </div>
                 </div>
-                <div className="meta">{formatRelative(f.updated_at)}</div>
               </li>
             ))}
           </ul>
@@ -317,7 +387,7 @@ export function App() {
       {(!isMobile || selected) && (
       <div className="panel main" role="main">
         <div className="toolbar" style={{gap:12}}>
-          {isMobile && selected && <button className="btn outline" onClick={()=>setSelected(null)} aria-label="Back">← Back</button>}
+          {isMobile && selected && <button className="btn outline" onClick={()=>setSelected(null)} aria-label="Back">Back</button>}
           <div className="input-group" style={{flex:1, minWidth:220}}>
             <span className="addon" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -326,36 +396,27 @@ export function App() {
               </svg>
             </span>
             <input placeholder="Ask or check a request" value={scopeText} onChange={e=>setScopeText(e.target.value)} />
-            <button className="btn" id="btn-check" onClick={screenScope}>Check</button>
+            <button className="btn" id="btn-check" onClick={()=>screenScope()}>Check</button>
           </div>
-          <button className="btn primary" id="btn-run" onClick={triageRun} disabled={!selected}>Run triage</button>
+          <button className="btn primary" id="btn-run" onClick={triageRun} disabled={!selected || running} aria-busy={running}>{running ? 'Drafting…' : 'Draft reply'}</button>
           <button className="btn outline" id="btn-refresh-audit" onClick={refreshAudit}>Refresh audit</button>
         </div>
-        <div className="main-body">
-          {scopeVerdict && !scopeVerdict.allowed && (
-            <div id="policy-banner" style={{marginBottom:12}}>
-              <div className="icon">🛡</div>
-              <div>
-                <div style={{fontWeight:600}}>Request blocked by scope guard</div>
-                <div className="summary" style={{color:'var(--muted)', marginTop:6}}>Destructive or cross-tenant action is not permitted in demo mode.</div>
-                <div style={{marginTop:6}}><span className="pill" id="scope-pill">{scopeVerdict.reason}</span></div>
-              </div>
-            </div>
-          )}
-          {isMobile && selected && (
-            <div role="tablist" aria-label="Detail tabs" style={{display:'flex', gap:8, margin:'6px 0 12px 0'}}>
-              <button role="tab" aria-selected={activeMobileTab==='overview'} data-active={activeMobileTab==='overview'} className="btn" onClick={()=>setActiveMobileTab('overview')} data-testid="tab-overview">Overview</button>
-              <button role="tab" aria-selected={activeMobileTab==='run'} data-active={activeMobileTab==='run'} className="btn" onClick={()=>setActiveMobileTab('run')} data-testid="tab-agent">Agent run</button>
-              <button role="tab" aria-selected={activeMobileTab==='graph'} data-active={activeMobileTab==='graph'} className="btn" onClick={()=>setActiveMobileTab('graph')} data-testid="tab-graph">Graph</button>
-            </div>
-          )}
-          {(!isMobile || activeMobileTab==='overview') && (
-          <div className="main-grid">
-          <section>
-            <h3>Finding</h3>
+        {isMobile && selected && (
+          <div role="tablist" aria-label="Detail tabs" style={{display:'flex', gap:8, margin:'6px 8px'}}>
+            <button role="tab" aria-selected={activeMobileTab==='overview'} className="btn" onClick={()=>setActiveMobileTab('overview')} data-testid="tab-overview">Overview</button>
+            <button role="tab" aria-selected={activeMobileTab==='run'} className="btn" onClick={()=>setActiveMobileTab('run')} data-testid="tab-agent">Agent run</button>
+            <button role="tab" aria-selected={activeMobileTab==='graph'} className="btn" onClick={()=>setActiveMobileTab('graph')} data-testid="tab-graph">Graph</button>
+          </div>
+        )}
+        {(!isMobile || activeMobileTab==='overview') && (
+          <section className="stage finding-stage">
             {detail ? (
               <div>
-                <div className="finding-title"><span className={`pill ${sevClass(detail.severity)}`} style={{marginRight:8}}>{(detail.severity||'').toLowerCase()}</span>{detail.title}</div>
+                <h2 className="finding-title"><span className={`pill ${sevClass(detail.severity)}`} style={{marginRight:8}}>{(detail.severity||'').toLowerCase()}</span>{detail.title}</h2>
+                <p className="stage-lead">{detail.ask || 'Emirates NBD Demo only. The agent reads this customer graph. It does not call their systems.'}</p>
+                {detail.audience && detail.pipeline?.summary && (
+                  <p className="stage-lead" id="reply-audience">Reply for {detail.audience}. {detail.pipeline.summary}.</p>
+                )}
                 {detail.source_tool ? (
                 <div className="meta-chips">
                   <ToolBadge tool={detail.source_tool} />
@@ -366,53 +427,19 @@ export function App() {
                 </div>
                 ) : (
                 <div className="meta-chips">
-                  <span className="pill">Asset cam-01</span>
-                  <span className="pill">Owner Facilities</span>
-                  <span className="pill">Segment DMZ A</span>
+                  <span className="pill">{detail.asset_label || assetShort(detail.asset_ids?.[0])}</span>
+                  {segmentLabel && <span className="pill">{segmentLabel}</span>}
+                  {ownerLabel && <span className="pill">{ownerLabel}</span>}
                 </div>
                 )}
               </div>
-            ) : <div>Loading...</div>}
+            ) : <div className="hint">Loading the first case.</div>}
           </section>
-          <section>
-            <h3>Risk & Remediation</h3>
-            {risk ? (
-              <div style={{display:'flex', alignItems:'center', gap:12}}>
-                <span>Band:</span>
-                <span className={`pill ${sevClass(risk.band)}`}>{risk.band}</span>
-                <div className="riskbar"><div className="fill" style={{width:`${Math.round((risk.score||0)*100)}%`}} /></div>
-                <div className="risk-score"><span>{Math.round((risk.score||0)*100)}</span><span className="of">/100</span><span className="band">· {risk.band}</span></div>
-              </div>
-            ) : <div>No data yet</div>}
-            {draft ? (
-              <ol>
-                {draft.steps.map((s:any, i:number)=>(
-                  <li key={i}>
-                    <div style={{background:'var(--surface-2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', margin:'6px 0'}}>
-                      <div>{s.text}</div>
-                      <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap'}}>
-                        {s.cites?.map((c:string)=><span className="pill mono" key={c}>{c}</span>)}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : <div>No data yet</div>}
-            <div className="actions-sticky">
-              <div className="actions-row">
-                <button className="btn primary" id="btn-approve" title={approveTitle} onClick={()=>decide('approve')} disabled={!selected||loading||approveDisabled}>Approve</button>
-                <button className="btn outline" id="btn-escalate" onClick={()=>decide('escalate')} disabled={!selected||loading}>Escalate</button>
-                <button className="btn ghost-danger" id="btn-reject" onClick={()=>decide('reject')} disabled={!selected||loading}>Reject</button>
-              </div>
-            </div>
-          </section>
-        </div>
         )}
-        {/* Agent run stepper (always render container to satisfy viewport checks; hide content when not active) */}
-        <div id="panel-trace" role="region" aria-label="Run trace" style={{visibility: (isMobile && activeMobileTab!=='run') ? 'hidden' : 'visible', minHeight: 160}}>
+        <div id="panel-trace" ref={traceRef} role="region" aria-label="Run trace" style={{visibility: (isMobile && activeMobileTab!=='run') ? 'hidden' : 'visible'}}>
           {(!isMobile || activeMobileTab==='run') && (
           <>
-            <h3 style={{margin:'12px 0'}}>Agent run</h3>
+            <h3>Agent</h3>
             {events.length ? (
               <ul>
                 {events.map((e, i)=> {
@@ -424,82 +451,188 @@ export function App() {
                   if (!(d?.final || d?.phase)) return null
                   return (
                     <li key={i} data-phase={phaseAttr}>
-                      <div className="step-title"><span className="status-icon">✓</span>{title}{dur ? <span className="duration"> · {dur}</span> : null}</div>
-                      {sum ? <div className="summary">{sum}</div> : null}
-                      <button className="payload-toggle" onClick={()=> setExpanded(prev => ({...prev, [i]: !prev[i]})) }>{expanded[i] ? 'Hide payload' : 'View payload'}</button>
+                      <div className="step-line">
+                        <div className="step-title"><span className="status-icon">+</span>{title}{dur ? <span className="duration"> · {dur}</span> : null}</div>
+                        {sum ? <div className="summary">{sum}</div> : null}
+                        <button className="payload-toggle" onClick={()=> setExpanded(prev => ({...prev, [i]: !prev[i]})) }>{expanded[i] ? 'Hide payload' : 'View payload'}</button>
+                      </div>
                       {expanded[i] && <pre className="payload mono">{JSON.stringify(d, null, 2)}</pre>}
                     </li>
                   )
                 })}
               </ul>
-            ) : <div>Waiting… Start a run to see steps. Metrics are labeled demo when simulated.</div>}
+            ) : (
+              <ol className="preview-steps">
+                <li>Check the request stays in Emirates NBD Demo</li>
+                <li>Read the related models</li>
+                <li>Rank the decision</li>
+                <li>Draft the reply</li>
+              </ol>
+            )}
           </>
           )}
         </div>
-        {/* Graph as a tab on mobile */}
-        {isMobile && activeMobileTab==='graph' && (
-          <div className="graph-disclosure" open={true}>
-            <summary>Graph context</summary>
-            {subgraph ? <div style={{marginTop:6}}><MiniGraph subgraph={subgraph} /></div> : <div>—</div>}
-          </div>
-        )}
+        <div className="main-body">
+          {scopeVerdict && !scopeVerdict.allowed && (
+            <div id="policy-banner">
+              <strong>Request blocked by scope guard</strong>
+              <div>This request is blocked because it is {String(scopeVerdict.reason || '').replaceAll('_', ' ')}.</div>
+              <div style={{marginTop:6}}><span className="pill" id="scope-pill">{scopeVerdict.reason}</span></div>
+            </div>
+          )}
+          {scopeVerdict && scopeVerdict.allowed && (
+            <div id="scope-allow">This request stays in Emirates NBD Demo.</div>
+          )}
+          {(!isMobile || activeMobileTab==='overview') && (
+          <section className="stage">
+            <h3>Recommendation</h3>
+            <p className="stage-lead">A reply you can send later. Nothing goes to Emirates NBD Demo until you decide.</p>
+            {risk ? (
+              <div className="risk-row">
+                <span>Band</span>
+                <span className={`pill ${sevClass(risk.band)}`}>{risk.band}</span>
+                <div className="riskbar"><div className="fill" style={{width:`${Math.round((risk.score||0)*100)}%`}} /></div>
+                <div className="risk-score"><span>{Math.round((risk.score||0)*100)}</span><span className="of">/100</span><span className="band">· {risk.band}</span></div>
+              </div>
+            ) : <div className="await-run">Draft the reply. You will see the priority, the reason, and the words to send. Nothing is sent.</div>}
+            {risk?.factors?.length ? (
+              <ul className="factor-list">
+                {risk.factors.map((f:any, i:number)=>(
+                  <li key={i}><strong>{f.name}</strong> {f.value}</li>
+                ))}
+              </ul>
+            ) : null}
+            {draft?.model && <p className="hint">Drafted by {draft.model} through OmniRoute.</p>}
+            {draft ? (
+              <ol>
+                {draft.steps.map((s:any, i:number)=>(
+                  <li key={i}>
+                    <div className="draft-step">
+                      <div>{s.text}</div>
+                      <div className="draft-cites">
+                        {s.cites?.map((c:string)=><span className="pill" key={c} title={c}>{citeLabel(subgraph, c)}</span>)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+          </section>
+          )}
+          {isMobile && activeMobileTab==='graph' && (
+            <div className="graph-disclosure" open={true}>
+              <GraphReadout subgraph={subgraph} />
+            </div>
+          )}
         </div>
+        {(!isMobile || activeMobileTab==='overview') && (
+        <div className="decision-bar">
+          <h3>Decision</h3>
+          <div className="decision-actions">
+            <button className="btn primary" id="btn-approve" onClick={()=>decide('approve')} disabled={!selected||loading||approveDisabled}>Approve</button>
+            <button className="btn outline" id="btn-escalate" onClick={()=>decide('escalate')} disabled={!selected||loading}>Escalate</button>
+            <button className="btn ghost-danger" id="btn-reject" onClick={()=>decide('reject')} disabled={!selected||loading}>Reject</button>
+            {approveDisabled && <span className="hint">Draft the reply first</span>}
+          </div>
+          {decisionNote && <p id="decision-status">{decisionNote}</p>}
+          <div className="decision-notes">
+            <span className="hint">Approve records the reply for the team that owns it. Nothing is sent.</span>
+            <span className="hint">Escalate records it for the pod lead. Nothing is sent.</span>
+            <span className="hint">Reject returns the draft to the analyst.</span>
+          </div>
+        </div>
+        )}
       </div>
       )}
 
       {!isMobile && (
       <div className="panel graph" role="region" aria-label="Graph context" id="panel-graph">
-        <div className="toolbar"><strong>Context</strong></div>
-        <div className="graph-body" style={{padding:8}}>
-          {subgraph ? (
-            <>
-              <div className="graph-canvas"><MiniGraph subgraph={subgraph} /></div>
-              <div style={{marginTop:8, fontSize:10, color:'var(--muted)'}}>
-                <span style={{display:'inline-flex', alignItems:'center', gap:6, marginRight:12}}>
-                  <span style={{width:8, height:8, borderRadius:8, background:'var(--accent)', display:'inline-block'}}></span> finding
-                </span>
-                <span style={{display:'inline-flex', alignItems:'center', gap:6, marginRight:12}}>
-                  <span style={{width:8, height:8, borderRadius:8, background:'#4FB1F0', display:'inline-block'}}></span> asset
-                </span>
-                <span style={{display:'inline-flex', alignItems:'center', gap:6, marginRight:12}}>
-                  <span style={{width:8, height:8, borderRadius:8, background:'#E2B93D', display:'inline-block'}}></span> segment
-                </span>
-                <span style={{display:'inline-flex', alignItems:'center', gap:6, marginRight:12}}>
-                  <span style={{width:8, height:8, borderRadius:8, background:'#B084EB', display:'inline-block'}}></span> owner
-                </span>
-                <span style={{display:'inline-flex', alignItems:'center', gap:6, marginRight:12}}>
-                  <span style={{width:8, height:8, borderRadius:8, background:'#E5484D', display:'inline-block'}}></span> weakness
-                </span>
-                {(subgraph?.nodes||[]).some((n:any)=> String(n.id).startsWith('tool:')) && (
-                <span style={{display:'inline-flex', alignItems:'center', gap:6}}>
-                  <span style={{width:8, height:8, borderRadius:8, background:'var(--muted)', display:'inline-block'}}></span> tool
-                </span>
-                )}
-              </div>
-              <div style={{marginTop:8}}>
-                <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-                  <h4 style={{margin:'6px 0'}}>Audit (recent)</h4>
-                  <button className="btn small" onClick={refreshAudit}>Refresh</button>
-                </div>
-                {audit.length ? (
-                  <ul className="audit-list" style={{margin:0, maxHeight:180, overflow:'auto'}}>
-                    {audit.map((a:any)=> (
-                      <li key={a.audit_id} style={{display:'flex', alignItems:'center', gap:8, padding:'4px 0'}}>
-                        <span className="status-icon">✓</span>
-                        <span style={{color:'var(--muted)'}}>{formatRelative(a.ts)}</span>
-                        <span>·</span>
-                        <span className="audit-label">{auditLabel(a)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <div>No data yet</div>}
-              </div>
-            </>
-          ) : <div>—</div>}
+        <div className="toolbar"><strong>Why this reply</strong></div>
+        <div className="graph-body">
+          <div className="rail-block">
+            <h3>Connected work</h3>
+            {subgraph ? <GraphReadout subgraph={subgraph} /> : <div className="hint">The related assets appear with the case.</div>}
+          </div>
+          <div className="rail-block">
+            <h3>Refusals</h3>
+            <p className="stage-lead">Two requests this desk must refuse.</p>
+            <div className="scope-actions">
+              <button className="btn" id="btn-scope-foreign" type="button" onClick={()=>screenScope('Open tenant_other_corp', ['finding:F-901'])}>Open tenant_other_corp</button>
+              <button className="btn ghost-danger" id="btn-scope-destructive" type="button" onClick={()=>screenScope('Shut the model down in prod')}>Shut the model down in prod</button>
+            </div>
+          </div>
+          <div className="rail-block">
+            <h3>Audit</h3>
+            {audit.length ? (
+              <ul className="audit-list">
+                {audit.map((a:any)=> (
+                  <li key={a.audit_id}>
+                    <span style={{color:'var(--muted)'}}>{formatRelative(a.ts)}</span>
+                    <span className="audit-label">{auditLabel(a)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <div className="hint">No decisions yet. Run a check or record one.</div>}
+          </div>
         </div>
       </div>
       )}
-      
+    </div>
+  )
+}
+
+const CASE_REASON: Record<string, string> = {
+  'F-101': 'Personal loans, do not promote',
+  'F-102': 'Application file broke',
+  'F-103': 'Weekly credit review',
+  'F-104': 'Missing debt to income',
+  'F-105': 'West region still on v2',
+  'F-106': 'No owner on nightly scoring',
+  'F-107': 'Retrain note still open',
+}
+
+function caseReason(id: string): string {
+  return CASE_REASON[id] || 'Open request'
+}
+
+function assetShort(id?: string): string {
+  if (!id) return 'asset unknown'
+  const tail = id.split(':')[1] || id
+  return `Asset ${tail}`
+}
+
+function citeLabel(subgraph: any, id: string): string {
+  return nodeName(subgraph, id)
+}
+
+function nodeName(subgraph: any, id: string): string {
+  const n = (subgraph?.nodes || []).find((x: any) => x.id === id)
+  return n?.label || id
+}
+
+function GraphReadout({subgraph}:{subgraph:any}) {
+  const nodes = subgraph?.nodes || []
+  const ids = new Set(nodes.map((n: any) => n.id))
+  const sentence = ids.has('asset:cam-01') && ids.has('asset:cam-02') && ids.has('segment:seg-dmz-a')
+    ? `${nodeName(subgraph, 'asset:cam-01')} and ${nodeName(subgraph, 'asset:cam-02')} serve ${nodeName(subgraph, 'segment:seg-dmz-a')}.`
+    : 'Related work stays inside this customer.'
+  const edges = (subgraph?.edges || []).filter((e: any) => e.type === 'SAME_SEGMENT' || e.type === 'HAS_FINDING' || e.type === 'OWNED_BY').slice(0, 8)
+  return (
+    <div>
+      <div className="graph-sentence">{sentence}</div>
+      <div className="graph-canvas"><MiniGraph subgraph={subgraph} /></div>
+      <div className="legend">
+        <span><i className="swatch" style={{background:'var(--accent)'}} /> request</span>
+        <span><i className="swatch" style={{background:'#0E7C86'}} /> model</span>
+        <span><i className="swatch" style={{background:'#C2410C'}} /> use case</span>
+        <span><i className="swatch" style={{background:'#6D28D9'}} /> pod</span>
+        <span><i className="swatch" style={{background:'#BE123C'}} /> evidence</span>
+      </div>
+      <ul className="edge-list">
+        {edges.map((e: any, i: number) => (
+          <li key={i}>{nodeName(subgraph, e.src)} <span className="edge-type">{e.type}</span> {nodeName(subgraph, e.dst)}</li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -507,42 +640,40 @@ export function App() {
 function MiniGraph({subgraph}:{subgraph:any}) {
   const nodes = subgraph?.nodes||[]
   const edges = subgraph?.edges||[]
-  const W = 340, H = 260, P = 28
-  // simple circle layout
+  const W = 300, H = 200, P = 36
   const N = Math.max(nodes.length, 1)
   const positioned = nodes.map((n:any, i:number) => {
-    const angle = (i / N) * Math.PI * 2
-    const r = Math.min(W,H)/2 - P
-    const cx = W/2 + r * Math.cos(angle)
-    const cy = H/2 + r * Math.sin(angle)
+    const angle = (i / N) * Math.PI * 2 - Math.PI / 2
+    const r = Math.min(W, H) / 2 - P
+    const cx = W / 2 + r * Math.cos(angle)
+    const cy = H / 2 + r * Math.sin(angle)
     return {...n, cx, cy}
   })
   const byId: Record<string, any> = {}
   positioned.forEach((n:any)=> byId[n.id]=n)
-  // color by type
   function colorFor(id: string): string {
-    const t = (id.split(':',1)[0] || '').toLowerCase()
+    const t = (id.split(':', 1)[0] || '').toLowerCase()
     if (t === 'finding') return 'var(--accent)'
-    if (t === 'asset') return '#4FB1F0'
-    if (t === 'segment') return '#E2B93D'
-    if (t === 'owner') return '#B084EB'
-    if (t === 'weakness') return '#E5484D'
+    if (t === 'asset') return '#0E7C86'
+    if (t === 'segment') return '#C2410C'
+    if (t === 'owner') return '#6D28D9'
+    if (t === 'weakness') return '#BE123C'
     return 'var(--muted)'
   }
   return (
     <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Asset graph" preserveAspectRatio="xMidYMid meet">
-      <g stroke="var(--border)" strokeWidth="1">
+      <g stroke="#C9D6EE" strokeWidth="1.5">
         {edges.map((e:any,i:number)=>{
           const s = byId[e.src], d = byId[e.dst]; if (!s||!d) return null
-          return <line key={i} x1={s.cx} y1={s.cy} x2={d.cx} y2={d.cy} />
+          return <line key={i} x1={s.cx} y1={s.cy} x2={d.cx} y2={d.cy}><title>{e.type}</title></line>
         })}
       </g>
       <g>
         {positioned.map((n:any)=>(
           <g key={n.id}>
-            <circle cx={n.cx} cy={n.cy} r="7" fill="var(--surface-2)" stroke={colorFor(n.id)} />
+            <circle cx={n.cx} cy={n.cy} r="6" fill="#FFFFFF" stroke={colorFor(n.id)} strokeWidth="2" />
             <title>{n.id}</title>
-            <text x={n.cx+10} y={n.cy+4} fontSize="12" fill="var(--muted)">{String(n.label||n.id).length>20?String(n.label||n.id).slice(0,19)+'…':(n.label||n.id)}</text>
+            <text x={n.cx} y={n.cy + 16} fontSize="10" textAnchor="middle" fill="#12151C">{String(n.label||n.id).slice(0, 16)}</text>
           </g>
         ))}
       </g>
