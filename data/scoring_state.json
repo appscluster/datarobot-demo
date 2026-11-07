@@ -1,0 +1,9 @@
+{
+  "live_model": "Loan model v2",
+  "challenger_model": "Loan model v3",
+  "regions": {
+    "west": "Loan model v2"
+  },
+  "nightly_owner": null,
+  "holdout_note": "4 more defaults per 100"
+}
