@@ -58,6 +58,10 @@ A DataRobot customer in consumer lending has this decision every time a new cred
 
 The agent is a Python program. LangGraph compiles three functions, planner then operator then checker, from `agent/runner.py`. The state they share is the typed `TriageState` in that file: tenant, case, subgraph, rank, draft, and whether the planner refused. Tests call the same functions.
 
+![Code first path: Start, Planner, Operator, Checker, End. A person then Approves, Escalates, or Rejects.](frontend/src/diagrams/code-first.svg)
+
+The same picture is stored as [frontend/src/diagrams/code-first.excalidraw](frontend/src/diagrams/code-first.excalidraw). Open that file in [Excalidraw](https://excalidraw.com) to edit it.
+
 1. **Start.** Draft reply calls `run_triage` in `agent/runner.py` with this bank and the open case.
 2. **Planner.** Checks the request is still inside Emirates NBD Demo. A cross tenant request stops here.
 3. **Operator.** Reads the case from SQLite GraphRAG, ranks it, and asks OmniRoute for the reply. LangChain Core builds that prompt in code.
@@ -67,6 +71,10 @@ The agent is a Python program. LangGraph compiles three functions, planner then 
 ## Who this serves
 
 Casework serves the bank staff who have to decide whether a new credit model may score personal loans. Applicants are the subject of the file. They are not the audience of the reply.
+
+![Who this serves: the analyst is the only user. The reply is stored for credit risk, lending ops, or the pod lead. An applicant is a row in the file. Another bank is refused.](frontend/src/diagrams/who-this-serves.svg)
+
+Edit the source in [frontend/src/diagrams/who-this-serves.excalidraw](frontend/src/diagrams/who-this-serves.excalidraw).
 
 ### Credit risk
 
@@ -107,6 +115,10 @@ How. Their findings stay in their own tenant. A request from this desk to read t
 ## The path
 
 Applicants exist only as rows in the file. The reply is for credit risk or lending ops. Promotion does not change v2.
+
+![The path: Intake, Scoring, Evidence, Casework, then a person decides. Promotion is refused. Lending ops stays open. Another bank stops at the tenant wall.](frontend/src/diagrams/the-path.svg)
+
+Edit the source in [frontend/src/diagrams/the-path.excalidraw](frontend/src/diagrams/the-path.excalidraw).
 
 ### Intake
 

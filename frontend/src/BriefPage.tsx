@@ -1,4 +1,7 @@
 import { go, signOut } from './auth'
+import codeFirstDiagram from './diagrams/code-first.svg'
+import servedDiagram from './diagrams/who-this-serves.svg'
+import pathDiagram from './diagrams/the-path.svg'
 
 const BEATS = [
   {
@@ -195,6 +198,7 @@ export function BriefPage() {
           <p className="stage-lead">
             The agent is a Python program. LangGraph compiles three functions, planner then operator then checker, from agent/runner.py. The state they share is the typed TriageState in that file: tenant, case, subgraph, rank, draft, and whether the planner refused. Tests call the same functions.
           </p>
+          <img className="brief-diagram" src={codeFirstDiagram} alt="Code first path: Start, Planner, Operator, Checker, End. A person then Approves, Escalates, or Rejects." />
           <ol className="code-first-flow">
             {CODE_FIRST.map(step => (
               <li key={step.name}>
@@ -209,6 +213,7 @@ export function BriefPage() {
           <p className="stage-lead">
             Casework serves the bank staff who have to decide whether a new credit model may score personal loans. Applicants are the subject of the file. They are not the audience of the reply.
           </p>
+          <img className="brief-diagram" src={servedDiagram} alt="Who this serves: the analyst is the only user. The reply is stored for credit risk, lending ops, or the pod lead. An applicant is a row in the file. Another bank is refused." />
           <div className="serve-grid">
             {SERVED.map(person => (
               <article key={person.name} className="brief-card">
@@ -224,6 +229,7 @@ export function BriefPage() {
           <p className="stage-lead">
             Applicants exist only as rows in the file. The reply is for credit risk or lending ops. Promotion does not change v2.
           </p>
+          <img className="brief-diagram" src={pathDiagram} alt="The path: Intake, Scoring, Evidence, Casework, then a person decides. Promotion is refused. Lending ops stays open. Another bank stops at the tenant wall." />
           <div className="serve-grid">
             {PATH.map(step => (
               <article key={step.name} className="brief-card">

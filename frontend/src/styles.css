@@ -515,6 +515,7 @@ ul.queue li.empty-queue { border: 0; background: transparent; box-shadow: none; 
 .brief-card { padding: 16px 18px; }
 .brief-grid .brief-card:last-child { grid-column: 1 / -1; }
 .brief-body > section { margin-top: 8px; }
+.brief-diagram { display: block; width: 100%; height: auto; margin: 14px 0 18px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .code-first-flow { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 14px 0 20px; padding: 0; }
 .code-first-flow li { flex: 1 1 160px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow); padding: 12px 14px; }
 .code-first-flow strong { display: block; margin-bottom: 6px; color: var(--ink); }

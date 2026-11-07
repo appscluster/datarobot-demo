@@ -54,6 +54,15 @@ def test_brief_explains_code_first():
     assert "TriageState" in text
     for step in ("Start", "Planner", "Operator", "Checker", "End"):
         assert step in text
+    assert "diagrams/code-first.svg" in text
+    assert "diagrams/who-this-serves.svg" in text
+    assert "diagrams/the-path.svg" in text
+    readme = (ROOT / "README.md").read_text()
+    for name in ("code-first", "who-this-serves", "the-path"):
+        assert f"frontend/src/diagrams/{name}.svg" in readme
+        assert f"frontend/src/diagrams/{name}.excalidraw" in readme
+        assert (ROOT / "frontend" / "src" / "diagrams" / f"{name}.excalidraw").is_file()
+        assert (ROOT / "frontend" / "src" / "diagrams" / f"{name}.svg").is_file()
 
 
 def test_brief_covers_the_assignment():

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="260" viewBox="0 0 1024 260" role="img">
+  <title>The path from the application file to a human decision</title>
+  <rect width="100%" height="100%" fill="#F6F8FA"/>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#16324F"/>
+    </marker>
+  </defs>
+  <rect x="24" y="28" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#16324F" stroke-width="2"/>
+  <text x="112.0" y="58.8" text-anchor="middle" fill="#16324F" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="112.0" dy="0" font-weight="700">Intake</tspan>
+    <tspan x="112.0" dy="18">missing columns</tspan>
+  </text>
+  <rect x="224" y="28" width="176" height="84" rx="12" fill="#E5F6EE" stroke="#0C6B4D" stroke-width="2"/>
+  <text x="312.0" y="58.8" text-anchor="middle" fill="#16324F" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="312.0" dy="0" font-weight="700">Scoring</tspan>
+    <tspan x="312.0" dy="18">v2 is live</tspan>
+  </text>
+  <line x1="203" y1="70.0" x2="219" y2="70.0" stroke="#16324F" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="424" y="28" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#16324F" stroke-width="2"/>
+  <text x="512.0" y="58.8" text-anchor="middle" fill="#16324F" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="512.0" dy="0" font-weight="700">Evidence</tspan>
+    <tspan x="512.0" dy="18">4 more per 100</tspan>
+  </text>
+  <line x1="403" y1="70.0" x2="419" y2="70.0" stroke="#16324F" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="624" y="28" width="176" height="84" rx="12" fill="#FFFFFF" stroke="#16324F" stroke-width="2"/>
+  <text x="712.0" y="58.8" text-anchor="middle" fill="#16324F" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="712.0" dy="0" font-weight="700">Casework</tspan>
+    <tspan x="712.0" dy="18">cited draft</tspan>
+  </text>
+  <line x1="603" y1="70.0" x2="619" y2="70.0" stroke="#16324F" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="824" y="28" width="176" height="84" rx="12" fill="#E5F6EE" stroke="#0C6B4D" stroke-width="2"/>
+  <text x="912.0" y="58.8" text-anchor="middle" fill="#16324F" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="912.0" dy="0" font-weight="700">Decision</tspan>
+    <tspan x="912.0" dy="18">a person</tspan>
+  </text>
+  <line x1="803" y1="70.0" x2="819" y2="70.0" stroke="#16324F" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="38.0" y="156" width="300" height="72" rx="12" fill="#FFE4E6" stroke="#9F1239" stroke-width="2"/>
+  <text x="188.0" y="180.8" text-anchor="middle" fill="#9F1239" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="188.0" dy="0" font-weight="700">Promotion</tspan>
+    <tspan x="188.0" dy="18">refused, v2 stays</tspan>
+  </text>
+  <rect x="362.0" y="156" width="300" height="72" rx="12" fill="#FFFFFF" stroke="#16324F" stroke-width="2"/>
+  <text x="512.0" y="180.8" text-anchor="middle" fill="#16324F" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="512.0" dy="0" font-weight="700">Lending ops</tspan>
+    <tspan x="512.0" dy="18">review still open</tspan>
+  </text>
+  <rect x="686.0" y="156" width="300" height="72" rx="12" fill="#FFE4E6" stroke="#9F1239" stroke-width="2"/>
+  <text x="836.0" y="180.8" text-anchor="middle" fill="#9F1239" font-family="Source Sans 3, Segoe UI, sans-serif" font-size="16">
+    <tspan x="836.0" dy="0" font-weight="700">Tenant wall</tspan>
+    <tspan x="836.0" dy="18">other bank refused</tspan>
+  </text>
+</svg>
