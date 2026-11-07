@@ -3,6 +3,7 @@ from pathlib import Path
 
 from agent.book import load_book
 from agent.intake import inspect_file
+from agent.ops import retrain_note, weekly_review
 from agent.scoring import load_scoring
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,8 +36,14 @@ def finding_context(finding_id: str) -> dict:
             "name": "evidence",
             "summary": f"Debt to income left the file. {state.challenger_model} still expects it.",
         }
-    elif finding_id in {"F-103", "F-107"}:
-        pipeline = {"name": "lending ops", "summary": "This lending ops request is still open."}
+    elif finding_id == "F-103":
+        review = weekly_review()
+        owner = review["owner"] or "no owner"
+        pipeline = {"name": "lending ops", "summary": f"The weekly credit review is {review['status']} and has {owner}."}
+    elif finding_id == "F-107":
+        note = retrain_note()
+        started = "started" if note["started"] else "not started"
+        pipeline = {"name": "lending ops", "summary": f"The retrain note is {note['status']} and has {started}."}
     else:
         pipeline = {
             "name": "scoring",
