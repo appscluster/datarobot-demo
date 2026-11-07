@@ -27,6 +27,13 @@ def test_brief_explains_the_lending_path():
     assert 'id="path-heading"' in text
 
 
+def test_brief_reports_runs_to_datarobot_now():
+    text = (SRC / "BriefPage.tsx").read_text()
+    assert "later build" not in text
+    assert "casework.run" in text
+    assert "DataRobot external agent monitoring" in text
+
+
 def test_brief_says_who_it_serves():
     text = (SRC / "BriefPage.tsx").read_text()
     assert 'id="served-heading"' in text
@@ -37,6 +44,16 @@ def test_brief_says_who_it_serves():
     assert "not a user of Casework" in text
     assert "Nothing is emailed" in text
     assert "serve-grid" in text
+
+
+def test_brief_explains_code_first():
+    text = (SRC / "BriefPage.tsx").read_text()
+    assert 'id="code-first-heading"' in text
+    assert "Code first" in text
+    assert "agent/runner.py" in text
+    assert "TriageState" in text
+    for step in ("Start", "Planner", "Operator", "Checker", "End"):
+        assert step in text
 
 
 def test_brief_covers_the_assignment():
@@ -68,18 +85,13 @@ def test_brief_covers_the_assignment():
         "SQLite",
         "Docker Compose",
         "OmniRoute",
-        "LightRAG",
-        "Ollama",
-        "Gitleaks",
-        "TruffleHog",
-        "Trivy",
-        "Semgrep",
-        "Prowler",
         "pytest",
         "Playwright",
         "OpenTelemetry",
     ):
         assert tool in text, tool
+    for unused in ("LightRAG", "Ollama", "Gitleaks", "TruffleHog", "Trivy", "Semgrep", "Prowler"):
+        assert unused not in text, unused
 
 
 def test_login_is_the_demo_analyst():
@@ -95,6 +107,8 @@ def test_desk_shows_the_run_and_the_decision():
     app = (SRC / "App.tsx").read_text()
     css = (SRC / "styles.css").read_text()
     assert 'id="decision-status"' in app
+    assert 'id="btn-explanation"' in app
+    assert "go('/brief')" in app
     assert 'id="scope-allow"' in app
     assert "No requests at this priority" in app
     assert "aria-busy" in app
@@ -103,3 +117,30 @@ def test_desk_shows_the_run_and_the_decision():
     assert "window.addEventListener('keydown'" in app
     assert "minmax(120px, 156px)" not in css
     assert ".step-line" in css
+    hdr = css.split(".hdr {", 1)[1].split("}", 1)[0]
+    assert "flex-direction: row" in hdr
+    assert 'id="graph-guide"' in app
+    assert "What is this?" in app
+    assert 'id="graph-expanded"' in app
+    assert "Expand map" in app
+    assert 'id="ai-console"' in app
+    assert 'mapId="graphrag-map"' in app
+    assert "/api/graph" in app
+    assert 'id="console-resize"' in app
+    assert 'id="btn-console-expand"' in app
+    assert 'id="btn-console-shrink"' in app
+    assert "--console-h" in css
+    assert "LangChain Core" in app
+    assert "SQLite GraphRAG" in app
+    assert "grid-area: console" in css
+    assert 'id="approval-why"' in app
+    assert "Why this can be approved" in app
+    assert "can be approved" in app
+    assert "status-hold" in app
+    assert "Neither one has been rejected" in app
+    assert 'id="reply-review"' in app
+    assert "Reply to review" in app
+    assert "tool-langgraph" in app and "tool-langchain" in app and "tool-rag" in app
+    assert "tool-omni" in app and "tool-otel" in app
+    assert "HAS_FINDING" in app and "SAME_SEGMENT" in app and "OWNED_BY" in app
+    assert "This picture is for the analyst" in app

@@ -5,8 +5,8 @@
     {
       "Description": "GitHub Personal Access Token",
       "StartLine": 14, "EndLine": 14, "StartColumn": 18, "EndColumn": 58,
-      "Match": "token = \"ghp_SYNTHETICxDEMOxFAKExTOKENx0000000000\"",
-      "Secret": "ghp_SYNTHETICxDEMOxFAKExTOKENx0000000000",
+      "Match": "token = \"demo-github-pat-not-a-real-token\"",
+      "Secret": "demo-github-pat-not-a-real-token",
       "File": "services/notifier/config.py",
       "Commit": "0000000000000000000000000000000000000001",
       "Entropy": 4.2, "Author": "demo-dev", "Email": "demo-dev@example.invalid",

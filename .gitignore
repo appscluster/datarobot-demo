@@ -16,7 +16,12 @@ env/
 .DS_Store
 *.log
 
-# Local data
+# Local secrets. Never commit a DataRobot token.
+.env
+.env.*
+!.env.example
+
+# Runtime SQLite: graph.db, agent.db, security.db, LightRAG workdir
 backend/var/
 
 # Build outputs
@@ -25,3 +30,7 @@ build/
 
 # Security scanner output (may contain sensitive text)
 reports/
+
+# Local agent and design session state
+.superpowers/
+.impeccable/

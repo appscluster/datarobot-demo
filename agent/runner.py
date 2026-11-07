@@ -6,6 +6,10 @@ from . import graph as graph_mod
 from . import checker as checker_mod
 from . import scope as scope_mod
 from . import retrieval as retrieval_mod
+from . import reply as reply_mod
+from .cases import finding_context
+from .console import describe
+from .reply import for_draft
 
 try:
     from langgraph.graph import StateGraph, START, END
@@ -30,6 +34,8 @@ class TriageState(TypedDict, total=False):
 
 def _emit(sink: Callable[[Dict[str, Any]], None], event: Dict[str, Any]) -> None:
     if sink:
+        if not event.get("line"):
+            event = {**event, "line": describe(event)}
         sink(event)
 
 
@@ -48,46 +54,78 @@ def _operator(state: TriageState, sink: Callable[[Dict[str, Any]], None]) -> Tri
         return state
     tenant_id = state["tenant_id"]
     finding_id = state["finding_id"]
-    sub = retrieval_mod.retrieve(tenant_id, finding_id, k=2, question=None)
-    _emit(sink, {"phase": "operator", "tool": "enrich_asset_graph", "result": {"subgraph_nodes": len(sub.get("nodes", []))}})
+    sub = retrieval_mod.retrieve(tenant_id, finding_id, k=3, question=None)
+    retrieval = "LightRAG" if sub.get("retrieval_backend") == "lightrag" else "SQLite GraphRAG"
+    _emit(sink, {"phase": "operator", "tool": "enrich_asset_graph", "result": {
+        "subgraph_nodes": len(sub.get("nodes", [])),
+        "subgraph_edges": len(sub.get("edges", [])),
+        "retrieval": retrieval,
+    }})
     state["subgraph"] = sub
     # Rank risk (simple heuristic from node props)
     n = graph_mod._ACTIVE_GRAPH.get(f"finding:{finding_id}") if graph_mod._ACTIVE_GRAPH else None
     band = (n.props.get("gold_band") if n else "medium") if n else "medium"
-    risk = {"band": band, "score": {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.05}.get(band, 0.5), "factors": []}
+    gf = (n.props.get("gold_factors") if n else None) or {}
+    factors = [{"name": str(k).replace("_", " "), "value": str(v)} for k, v in gf.items()] if isinstance(gf, dict) else []
+    risk = {"band": band, "score": {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.05}.get(band, 0.5), "factors": factors}
     state["risk"] = risk
     _emit(sink, {"phase": "operator", "tool": "rank_risk", "result": risk})
-    # Draft remediation
-    evidence_ids = [n["id"] for n in sub.get("nodes", [])][:2] or [f"finding:{finding_id}"]
-    text = (n.props.get("remediation") if n else None) or "Rotate default credentials and restrict the management UI to the admin segment."
-    owner = (n.props.get("owner_id") if n else None) or "owner:team-facilities"
-    steps = [{"text": text, "cites": evidence_ids, "owner_id": owner}]
-    cited = sorted({c for s in steps for c in s["cites"]})
-    draft = {"steps": steps, "summary": f"{band} risk; coordinate with the owning team.", "cited_ids": cited, "non_destructive": True}
+    nodes = [{"id": node.get("id"), "type": node.get("type"), "label": node.get("label")} for node in sub.get("nodes", [])]
+    edges = [{"src": edge.get("src"), "type": edge.get("type"), "dst": edge.get("dst")} for edge in sub.get("edges", [])]
+    nodes, edges = for_draft(nodes, edges, finding_id)
+    anchor = f"finding:{finding_id}"
+    evidence_ids = [anchor] + [node["id"] for node in nodes if node.get("id") and node.get("id") != anchor][:2]
+    ctx = finding_context(finding_id)
+    draft, metrics = reply_mod.draft_case(
+        finding_id=finding_id,
+        title=(n.props.get("title") if n else "") or finding_id,
+        ask=(n.props.get("ask") if n else "") or "",
+        band=band,
+        nodes=nodes,
+        edges=edges,
+        evidence_ids=evidence_ids,
+        owner_id=(n.props.get("owner_id") if n else None) or "owner:team-facilities",
+        decision=ctx["pipeline"]["summary"],
+    )
     state["draft"] = draft
-    _emit(sink, {"phase": "operator", "tool": "draft_remediation", "result": {"cited_count": len(cited)}})
+    state["metrics"] = metrics
+    _emit(sink, {"phase": "operator", "tool": "draft_remediation", "result": {"cited_count": len(draft.get("cited_ids") or []), "model": draft.get("model")}})
+    _emit(sink, {"phase": "metrics", "metrics": metrics})
     return state
+
+
+def _record_monitoring(state: TriageState, checker_passed: bool) -> Dict[str, Any]:
+    from agent.monitoring import record_run
+    draft = state.get("draft") or {}
+    steps = draft.get("steps") if isinstance(draft, dict) else []
+    completion = " ".join(str(step.get("text") or "") for step in (steps or []) if isinstance(step, dict))
+    metrics = state.get("metrics") or {}
+    return record_run(
+        finding_id=str(state.get("finding_id") or ""),
+        tenant_id=str(state.get("tenant_id") or ""),
+        model=str(metrics.get("model") or ""),
+        prompt_tokens=int(metrics.get("prompt_tokens") or 0),
+        completion_tokens=int(metrics.get("completion_tokens") or 0),
+        completion=completion,
+        checker_passed=checker_passed,
+    )
 
 
 def _checker(state: TriageState, sink: Callable[[Dict[str, Any]], None]) -> TriageState:
     if state.get("refused"):
         _emit(sink, {"phase": "checker", "result": "skipped_due_to_refusal"})
+        _emit(sink, {"phase": "monitoring", "result": _record_monitoring(state, False)})
         return state
     res = checker_mod.check_draft(state["draft"], state["subgraph"], state["tenant_id"])
     _emit(sink, {"phase": "checker", "result": {"passed": res.passed, "issues": res.issues}})
+    _emit(sink, {"phase": "monitoring", "result": _record_monitoring(state, res.passed)})
     return state
 
 
 def run_triage(tenant_id: str, finding_id: str, sink: Callable[[Dict[str, Any]], None]) -> TriageState:
-    # Provide demo metrics labeled as simulated
-    metrics = {"prefix_tokens": 1200, "suffix_tokens": 300, "cached_tokens": 1100, "cache_hit_ratio": 0.9, "input_cost_usd": 0.0025}
-    metrics["prompt_tokens"] = metrics["prefix_tokens"] + metrics["suffix_tokens"]
-    metrics["usd_estimate"] = metrics["input_cost_usd"]
-    metrics["demo_simulated_metrics"] = True
-    _emit(sink, {"phase": "metrics", "metrics": metrics})
+    initial: TriageState = {"tenant_id": tenant_id, "finding_id": finding_id, "steps": []}
 
-    initial: TriageState = {"tenant_id": tenant_id, "finding_id": finding_id, "steps": [], "metrics": metrics}
-
+    _emit(sink, {"phase": "graph", "tool": "langgraph"})
     if _HAS_LANGGRAPH:
         sg = StateGraph(TriageState)
         sg.add_node("planner", lambda s: _planner(s, sink))

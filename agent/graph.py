@@ -64,6 +64,20 @@ class Graph:
         context_text = ", ".join(sorted(n.id for n in result_nodes.values()))
         return {"anchor_ids": [anchor_id], "nodes": nodes_ser, "edges": edges_ser, "context_text": context_text, "retrieve_ms": 1}
 
+    def snapshot(self, tenant_id: str) -> Dict[str, Any]:
+        """Every node and edge this tenant owns. Other tenants stay out."""
+        nodes = [n for n in self._nodes.values() if n.tenant_id == tenant_id]
+        ids = {n.id for n in nodes}
+        edges = [e for e in self._edges if e.src in ids and e.dst in ids]
+        by_type: Dict[str, int] = {}
+        for n in nodes:
+            by_type[n.type] = by_type.get(n.type, 0) + 1
+        return {
+            "nodes": [{"id": n.id, "type": n.type, "label": n.label} for n in nodes],
+            "edges": [{"src": e.src, "type": e.type, "dst": e.dst} for e in edges],
+            "counts": {"nodes": len(nodes), "edges": len(edges), "by_type": by_type},
+        }
+
 _ACTIVE_GRAPH: Optional[Graph] = None
 
 

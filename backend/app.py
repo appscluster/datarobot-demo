@@ -114,8 +114,10 @@ async def list_findings(status: str = "open", limit: int = 50):
         if n.type == "finding" and n.tenant_id == tenant_id:
             asset_ids = n.props.get("asset_ids", [])
             asset = g.get(asset_ids[0]) if asset_ids else None
+            finding_id = n.id.split(":", 1)[1]
+            approval = finding_context(finding_id).get("approval") or {}
             rows.append({
-                "finding_id": n.id.split(":", 1)[1],
+                "finding_id": finding_id,
                 "node_id": n.id,
                 "title": n.props.get("title", n.label),
                 "ask": n.props.get("ask"),
@@ -125,6 +127,7 @@ async def list_findings(status: str = "open", limit: int = 50):
                 "asset_label": asset.label if asset else None,
                 "updated_at": n.props.get("updated_at", datetime.utcnow().isoformat()+"Z"),
                 "source_tool": n.props.get("source_tool"),
+                "approvable": bool(approval.get("ready")),
             })
     return {"findings": rows[:limit]}
 
@@ -146,12 +149,21 @@ async def get_finding(finding_id: str):
     ctx = finding_context(finding_id)
     out["audience"] = ctx["audience"]
     out["pipeline"] = ctx["pipeline"]
+    out["approval"] = ctx.get("approval")
     if n.props.get("source_tool"):
         # Scanner finding: location and redacted preview only, never a raw secret
         out["evidence"] = [{"kind": n.props.get("category", "code"), "summary": n.props.get("title", n.label)}]
         for k in ("source_tool", "rule_id", "category", "file", "line", "fingerprint", "masked_preview", "references", "synthetic"):
             out[k] = n.props.get(k)
     return {"finding": out}
+
+
+@app.get("/api/graph")
+async def graph_snapshot():
+    g = graph_mod._ACTIVE_GRAPH
+    if not g:
+        raise HTTPException(500, "Graph not loaded")
+    return g.snapshot(SESSION.tenant_id)
 
 
 @app.post("/api/graph/enrich")

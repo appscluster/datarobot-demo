@@ -1,6 +1,6 @@
 """Unit tests for the scanner adapters (Gitleaks, TruffleHog, Trivy, Semgrep, Prowler).
 
-Fake secrets are assembled at runtime so secret scanners do not flag this file.
+Fixture values are obvious demo strings, not token shapes.
 """
 import json
 import sqlite3
@@ -18,8 +18,8 @@ from agent import checker as checker_mod  # noqa: E402
 
 FX = ROOT / "data" / "security_fixtures"
 T = "tenant_demo_acme"
-FAKE_GH = "ghp_" + "UNITTEST" + "x" * 28 + "0000"
-FAKE_AWS = "AKIA" + "UNITTEST" + "FAKE1234"
+FAKE_GH = "demo-github-token-not-real"
+FAKE_AWS = "demo-aws-key-not-real"
 
 
 def _fx(tool):
@@ -41,7 +41,7 @@ def test_gitleaks_fixture_parses_and_redacts():
     for r in raw:
         assert r["Secret"] not in _dump(fs)
         assert r["Match"] not in _dump(fs)
-    assert f.masked_preview.startswith("ghp_") and "*" in f.masked_preview
+    assert f.masked_preview.startswith("demo") and "*" in f.masked_preview
 
 
 def test_trufflehog_fixture_unverified_high_and_redacted():

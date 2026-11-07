@@ -7,9 +7,9 @@
       "SourceID": 1, "SourceType": 15, "SourceName": "trufflehog - filesystem",
       "DetectorType": 2, "DetectorName": "AWS", "DecoderName": "PLAIN",
       "Verified": false,
-      "Raw": "AKIAIOSFODNN7EXAMPLE",
-      "RawV2": "AKIAIOSFODNN7EXAMPLEwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-      "Redacted": "AKIAIOSFODNN7EXAMPLE",
+      "Raw": "demo-aws-access-not-real",
+      "RawV2": "demo-aws-secret-not-real-value",
+      "Redacted": "demo-aws-access-not-real",
       "ExtraData": {"account": "000000000000", "resource_type": "Access key"},
       "StructuredData": null
     },
@@ -18,8 +18,8 @@
       "SourceID": 1, "SourceType": 15, "SourceName": "trufflehog - filesystem",
       "DetectorType": 8, "DetectorName": "SlackWebhook", "DecoderName": "PLAIN",
       "Verified": false,
-      "Raw": "https://hooks.slack.com/services/T00000000/B00000000/SYNTHETICDEMOFAKE000000",
-      "Redacted": "https://hooks.slack.com/services/T00000000/B00000000/****",
+      "Raw": "demo-slack-webhook-not-real",
+      "Redacted": "demo-slack-webhook-not-real",
       "ExtraData": null, "StructuredData": null
     }
   ]

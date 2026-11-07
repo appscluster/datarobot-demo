@@ -1,5 +1,6 @@
 import React from 'react'
 import { getApiBase, getRunsBase } from './config'
+import { go } from './auth'
 
 type Finding = {
   finding_id: string
@@ -11,9 +12,27 @@ type Finding = {
   asset_label?: string | null
   updated_at: string
   source_tool?: string | null
+  approvable?: boolean
 }
 
 const TOOL_LABEL: Record<string, string> = {gitleaks: 'Gitleaks', trufflehog: 'TruffleHog', trivy: 'Trivy', semgrep: 'Semgrep', prowler: 'Prowler'}
+const CONSOLE_MIN = 96
+const CONSOLE_MAX = 520
+
+function clampConsole(height: number): number {
+  return Math.min(CONSOLE_MAX, Math.max(CONSOLE_MIN, Math.round(height)))
+}
+
+function storedConsoleHeight(): number {
+  const fallback = typeof window !== 'undefined' && window.matchMedia('(max-width: 1024px)').matches ? 180 : 148
+  try {
+    const saved = sessionStorage.getItem('casework-console-h')
+    const n = saved ? Number(saved) : NaN
+    return Number.isFinite(n) ? clampConsole(n) : fallback
+  } catch {
+    return fallback
+  }
+}
 function ToolBadge({tool}:{tool?: string | null}) {
   if (!tool) return null
   return <span className="pill tool-badge" data-tool={tool} title={`Source: ${TOOL_LABEL[tool] || tool} (open source scanner)`}>{TOOL_LABEL[tool] || tool}</span>
@@ -27,6 +46,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   const [selected, setSelected] = React.useState<string | null>(null)
   const [detail, setDetail] = React.useState<any>(null)
   const [subgraph, setSubgraph] = React.useState<any>(null)
+  const [catalog, setCatalog] = React.useState<any>(null)
   const [risk, setRisk] = React.useState<any>(null)
   const [draft, setDraft] = React.useState<any>(null)
   const [events, setEvents] = React.useState<RunEvent[]>([])
@@ -42,7 +62,10 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   const [expanded, setExpanded] = React.useState<Record<number, boolean>>({})
   const [running, setRunning] = React.useState(false)
   const [decisionNote, setDecisionNote] = React.useState<string | null>(null)
+  const [consoleHeight, setConsoleHeight] = React.useState(storedConsoleHeight)
+  const consoleDrag = React.useRef<{ y: number; h: number } | null>(null)
   const traceRef = React.useRef<HTMLDivElement | null>(null)
+  const consoleRef = React.useRef<HTMLDivElement | null>(null)
   const runToken = React.useRef(0)
   const streamRef = React.useRef<EventSource | null>(null)
 
@@ -53,6 +76,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     fetch(`${API}/api/session`).then(r => r.json()).then(setSession).catch(()=>{})
     fetch(`${API}/api/findings`).then(r => r.json()).then(d => setFindings(d.findings || [])).catch(()=>{})
     fetch(`${API}/api/audit`).then(r => r.json()).then(d => setAudit(d.audit || [])).catch(()=>{})
+    fetch(`${API}/api/graph`).then(r => r.json()).then(setCatalog).catch(()=>{})
   }, [API])
 
   React.useEffect(() => {
@@ -105,7 +129,9 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   React.useEffect(() => {
     const last = traceRef.current?.querySelector('li:last-child')
     last?.scrollIntoView({block: 'nearest'})
-  }, [events])
+    const log = consoleRef.current
+    if (log) log.scrollTop = log.scrollHeight
+  }, [events, decisionNote])
 
   async function triageRun() {
     if (!selected || running) return
@@ -236,8 +262,11 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
   }
 
   const approveDisabled = !lastRunId || !risk || !draft
-  const filtered = findings.filter(f => severityFilter==='all' ? true : (f.severity||'').toLowerCase()===severityFilter)
-  const openCount = findings.length
+  const filtered = findings
+    .filter(f => severityFilter==='all' ? true : (f.severity||'').toLowerCase()===severityFilter)
+    .slice()
+    .sort((a, b) => Number(Boolean(b.approvable)) - Number(Boolean(a.approvable)))
+  const approvableCount = findings.filter(f => f.approvable).length
 
   function tenantDisplay(tid?: string): string {
     if (!tid) return ''
@@ -271,6 +300,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     if (phase === 'planner') return 'Plan'
     if (phase === 'checker') return 'Check'
     if (phase === 'metrics') return 'Metrics'
+    if (phase === 'monitoring') return 'Monitoring'
     if (phase === 'operator') {
       if (tool === 'enrich_asset_graph') return 'Enrich asset graph'
       if (tool === 'rank_risk') return 'Rank risk'
@@ -287,6 +317,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     if (d?.phase === 'operator' && d?.tool === 'draft_remediation') return `Cited ${d?.result?.cited_count ?? 0} ids`
     if (d?.phase === 'checker') return d?.result?.passed ? 'Draft OK' : `Issues: ${(d?.result?.issues || []).join(',')}`
     if (d?.final) return `Band ${d?.risk?.band}; cites ${d?.draft?.cited_ids?.length || 0}`
+    if (d?.phase === 'monitoring') return d?.result?.exported ? 'Span casework.run sent to DataRobot' : 'Span casework.run recorded'
     if (d?.phase === 'metrics') {
       const model = d?.metrics?.model ? ` · ${d.metrics.model}` : ''
       const via = d?.metrics?.provider === 'omniroute' ? ' · OmniRoute' : ''
@@ -309,12 +340,44 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
     return `${s}s`
   }
 
+  React.useEffect(() => {
+    try { sessionStorage.setItem('casework-console-h', String(consoleHeight)) } catch {}
+  }, [consoleHeight])
+
+  function nudgeConsole(delta: number) {
+    setConsoleHeight(height => clampConsole(height + delta))
+  }
+
+  function onConsoleResizeDown(e: React.PointerEvent<HTMLButtonElement>) {
+    consoleDrag.current = { y: e.clientY, h: consoleHeight }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function onConsoleResizeMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const drag = consoleDrag.current
+    if (!drag) return
+    setConsoleHeight(clampConsole(drag.h + (drag.y - e.clientY)))
+  }
+
+  function onConsoleResizeUp() {
+    consoleDrag.current = null
+  }
+
+  function onConsoleResizeKey(e: React.KeyboardEvent<HTMLButtonElement>) {
+    const step = e.shiftKey ? 48 : 24
+    if (e.key === 'ArrowUp') { e.preventDefault(); nudgeConsole(step) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); nudgeConsole(-step) }
+    if (e.key === 'Home') { e.preventDefault(); setConsoleHeight(CONSOLE_MAX) }
+    if (e.key === 'End') { e.preventDefault(); setConsoleHeight(CONSOLE_MIN) }
+  }
+
   const appStyle = React.useMemo<React.CSSProperties>(() => {
+    const sized = { ['--console-h' as string]: `${consoleHeight}px` } as React.CSSProperties
     if (isMobile && selected) {
-      return { gridTemplateRows: '56px 1fr', gridTemplateAreas: `"hdr" "main"` };
+      return { ...sized, gridTemplateRows: `56px minmax(0, 1fr) ${consoleHeight}px`, gridTemplateAreas: `"hdr" "main" "console"` };
     }
-    return {};
-  }, [isMobile, selected]);
+    return sized;
+  }, [isMobile, selected, consoleHeight]);
 
   const segmentLabel = (subgraph?.nodes || []).find((n: any) => n.type === 'segment')?.label
   const ownerLabel = (subgraph?.nodes || []).find((n: any) => n.type === 'owner')?.label
@@ -330,6 +393,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
         </div>
         <div className="hdr-right">
           <span className="tenant-badge" id="session-actor">{actor.name}</span>
+          <button className="btn small" id="btn-explanation" type="button" onClick={() => go('/brief')}>Explanation</button>
           {onSignOut && <button className="btn small" type="button" onClick={onSignOut}>Sign out</button>}
           <div className="avatar" aria-label="Analyst avatar" title={actor.name}>{actor.initials}</div>
         </div>
@@ -347,7 +411,8 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
           }} />
         </div>
         <div className="q-header">
-          <div>Requests · {openCount} open</div>
+          <div id="queue-count">{approvableCount} can be approved</div>
+          <p className="hint">Green means the reply is safe to record. Hold means the reply says wait. Neither one has been rejected.</p>
         </div>
         <div className="filters" role="group" aria-label="Severity filters">
           {['all','critical','high','medium','low'].map(s=>(
@@ -374,7 +439,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
                   <div className="meta">
                     <span className="mono">{f.finding_id}</span>
                     <span>{f.asset_label || assetShort(f.asset_ids?.[0])}</span>
-                    <span className="status-open">{f.status}</span>
+                    {f.approvable ? <span className="pill can-approve">Can approve</span> : <span className="status-hold">Hold</span>}
                   </div>
                 </div>
               </li>
@@ -417,6 +482,12 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
                 {detail.audience && detail.pipeline?.summary && (
                   <p className="stage-lead" id="reply-audience">Reply for {detail.audience}. {detail.pipeline.summary}</p>
                 )}
+                {detail.approval?.ready && (
+                  <div id="approval-why" className="approval-why">
+                    <p><strong>Why this can be approved.</strong> {detail.approval.why}</p>
+                    <p><strong>How.</strong> {detail.approval.how}</p>
+                  </div>
+                )}
                 {detail.source_tool ? (
                 <div className="meta-chips">
                   <ToolBadge tool={detail.source_tool} />
@@ -436,6 +507,60 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
             ) : <div className="hint">Loading the first case.</div>}
           </section>
         )}
+        <div className="main-body">
+          {scopeVerdict && !scopeVerdict.allowed && (
+            <div id="policy-banner">
+              <strong>Request blocked by scope guard</strong>
+              <div>This request is blocked because it is {String(scopeVerdict.reason || '').replaceAll('_', ' ')}.</div>
+              <div style={{marginTop:6}}><span className="pill" id="scope-pill">{scopeVerdict.reason}</span></div>
+            </div>
+          )}
+          {scopeVerdict && scopeVerdict.allowed && (
+            <div id="scope-allow">This request stays in Emirates NBD Demo.</div>
+          )}
+          {(!isMobile || activeMobileTab==='overview') && (
+          <section className="stage" id="reply-review">
+            <h3>Reply to review</h3>
+            <p className="stage-lead">Read this before you decide. Nothing goes to Emirates NBD Demo until you choose.</p>
+            {risk ? (
+              <div className="risk-row">
+                <span>Band</span>
+                <span className={`pill ${sevClass(risk.band)}`}>{risk.band}</span>
+                <div className="riskbar"><div className="fill" style={{width:`${Math.round((risk.score||0)*100)}%`}} /></div>
+                <div className="risk-score"><span>{Math.round((risk.score||0)*100)}</span><span className="of">/100</span><span className="band">· {risk.band}</span></div>
+              </div>
+            ) : <div className="await-run">Draft the reply. The words to review appear here. Nothing is sent.</div>}
+            {risk?.factors?.length ? (
+              <ul className="factor-list">
+                {risk.factors.map((f:any, i:number)=>(
+                  <li key={i}><strong>{f.name}</strong> {f.value}</li>
+                ))}
+              </ul>
+            ) : null}
+            {draft?.model && <p className="hint">Drafted by {draft.model} through OmniRoute.</p>}
+            {draft ? (
+              <ol className="reply-text">
+                {draft.steps.map((s:any, i:number)=>(
+                  <li key={i}>
+                    <div className="draft-step">
+                      <div>{s.text}</div>
+                      <div className="draft-cites">
+                        {s.cites?.map((c:string)=><span className="pill" key={c} title={c}>{citeLabel(subgraph, c)}</span>)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+          </section>
+          )}
+          {isMobile && activeMobileTab==='graph' && (
+            <div className="graph-disclosure" open={true}>
+              <GraphReadout subgraph={subgraph} />
+              {catalog?.nodes?.length ? <GraphRagView catalog={catalog} /> : null}
+            </div>
+          )}
+        </div>
         <div id="panel-trace" ref={traceRef} role="region" aria-label="Run trace" style={{visibility: (isMobile && activeMobileTab!=='run') ? 'hidden' : 'visible'}}>
           {(!isMobile || activeMobileTab==='run') && (
           <>
@@ -472,59 +597,6 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
           </>
           )}
         </div>
-        <div className="main-body">
-          {scopeVerdict && !scopeVerdict.allowed && (
-            <div id="policy-banner">
-              <strong>Request blocked by scope guard</strong>
-              <div>This request is blocked because it is {String(scopeVerdict.reason || '').replaceAll('_', ' ')}.</div>
-              <div style={{marginTop:6}}><span className="pill" id="scope-pill">{scopeVerdict.reason}</span></div>
-            </div>
-          )}
-          {scopeVerdict && scopeVerdict.allowed && (
-            <div id="scope-allow">This request stays in Emirates NBD Demo.</div>
-          )}
-          {(!isMobile || activeMobileTab==='overview') && (
-          <section className="stage">
-            <h3>Recommendation</h3>
-            <p className="stage-lead">A reply you can send later. Nothing goes to Emirates NBD Demo until you decide.</p>
-            {risk ? (
-              <div className="risk-row">
-                <span>Band</span>
-                <span className={`pill ${sevClass(risk.band)}`}>{risk.band}</span>
-                <div className="riskbar"><div className="fill" style={{width:`${Math.round((risk.score||0)*100)}%`}} /></div>
-                <div className="risk-score"><span>{Math.round((risk.score||0)*100)}</span><span className="of">/100</span><span className="band">· {risk.band}</span></div>
-              </div>
-            ) : <div className="await-run">Draft the reply. You will see the priority, the reason, and the words to send. Nothing is sent.</div>}
-            {risk?.factors?.length ? (
-              <ul className="factor-list">
-                {risk.factors.map((f:any, i:number)=>(
-                  <li key={i}><strong>{f.name}</strong> {f.value}</li>
-                ))}
-              </ul>
-            ) : null}
-            {draft?.model && <p className="hint">Drafted by {draft.model} through OmniRoute.</p>}
-            {draft ? (
-              <ol>
-                {draft.steps.map((s:any, i:number)=>(
-                  <li key={i}>
-                    <div className="draft-step">
-                      <div>{s.text}</div>
-                      <div className="draft-cites">
-                        {s.cites?.map((c:string)=><span className="pill" key={c} title={c}>{citeLabel(subgraph, c)}</span>)}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : null}
-          </section>
-          )}
-          {isMobile && activeMobileTab==='graph' && (
-            <div className="graph-disclosure" open={true}>
-              <GraphReadout subgraph={subgraph} />
-            </div>
-          )}
-        </div>
         {(!isMobile || activeMobileTab==='overview') && (
         <div className="decision-bar">
           <h3>Decision</h3>
@@ -554,6 +626,10 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
             {subgraph ? <GraphReadout subgraph={subgraph} /> : <div className="hint">The related assets appear with the case.</div>}
           </div>
           <div className="rail-block">
+            <h3>GraphRAG</h3>
+            {catalog?.nodes?.length ? <GraphRagView catalog={catalog} /> : <div className="hint">The graph for this bank loads with the desk.</div>}
+          </div>
+          <div className="rail-block">
             <h3>Refusals</h3>
             <p className="stage-lead">Two requests this desk must refuse.</p>
             <div className="scope-actions">
@@ -577,6 +653,49 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
         </div>
       </div>
       )}
+
+      <section id="ai-console" className="panel ai-console" aria-label="AI console">
+        <button
+          type="button"
+          id="console-resize"
+          className="console-resize"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize AI console"
+          aria-valuemin={CONSOLE_MIN}
+          aria-valuemax={CONSOLE_MAX}
+          aria-valuenow={consoleHeight}
+          onPointerDown={onConsoleResizeDown}
+          onPointerMove={onConsoleResizeMove}
+          onPointerUp={onConsoleResizeUp}
+          onPointerCancel={onConsoleResizeUp}
+          onKeyDown={onConsoleResizeKey}
+        />
+        <div className="console-head">
+          <h3>AI console</h3>
+          <div className="console-tools">
+            <span className="pill tool-langgraph" title="The agent loop. It plans the run, reads the case, ranks it, and checks the draft.">LangGraph</span>
+            <span className="pill tool-langchain" title="Builds the system and user messages that the model reads.">LangChain Core</span>
+            <span className="pill tool-rag" title="Reads this tenant's case map. The draft may cite only those nodes.">SQLite GraphRAG</span>
+            <span className="pill tool-omni" title="The model gateway. gpt-5.6-terra writes the reply and reports the token counts.">OmniRoute</span>
+            <span className="pill tool-otel" title="Records span casework.run. It sends the span only when DataRobot monitoring is configured.">OpenTelemetry</span>
+          </div>
+          <div className="console-size">
+            <button type="button" className="btn small" id="btn-console-shrink" onClick={() => nudgeConsole(-48)} disabled={consoleHeight <= CONSOLE_MIN}>Shrink</button>
+            <button type="button" className="btn small" id="btn-console-expand" onClick={() => nudgeConsole(48)} disabled={consoleHeight >= CONSOLE_MAX}>Expand</button>
+          </div>
+        </div>
+        <div className="console-log" ref={consoleRef}>
+          {events.some(e => e.data?.line) || decisionNote ? (
+            <ol>
+              {events.map((e, i) => e.data?.line ? <li key={i} data-tool={consoleTool(e.data)}>{e.data.line}</li> : null)}
+              {decisionNote ? <li>{decisionNote}</li> : null}
+            </ol>
+          ) : (
+            <p className="hint">Draft reply to start the run. LangGraph plans it. LangChain Core writes the prompt. SQLite GraphRAG supplies the case.</p>
+          )}
+        </div>
+      </section>
     </div>
   )
 }
@@ -589,6 +708,16 @@ const CASE_REASON: Record<string, string> = {
   'F-105': 'West region still on v2',
   'F-106': 'No owner on nightly scoring',
   'F-107': 'Retrain note still open',
+  'F-108': 'Approved on Loan model v2',
+  'F-109': 'Ready for the next batch',
+}
+
+function consoleTool(data: any): string {
+  if (data?.phase === 'monitoring') return 'otel'
+  if (data?.phase === 'metrics' || data?.tool === 'draft_remediation') return data?.tool === 'draft_remediation' ? 'langchain' : 'omni'
+  if (data?.tool === 'enrich_asset_graph') return 'rag'
+  if (data?.phase === 'graph' || data?.phase === 'planner' || data?.phase === 'checker' || data?.tool === 'rank_risk') return 'langgraph'
+  return 'desk'
 }
 
 function caseReason(id: string): string {
@@ -611,16 +740,47 @@ function nodeName(subgraph: any, id: string): string {
 }
 
 function GraphReadout({subgraph}:{subgraph:any}) {
+  const guideRef = React.useRef<HTMLDialogElement>(null)
+  const mapRef = React.useRef<HTMLDialogElement>(null)
   const nodes = subgraph?.nodes || []
   const ids = new Set(nodes.map((n: any) => n.id))
   const sentence = ids.has('asset:cam-01') && ids.has('asset:cam-02') && ids.has('segment:seg-dmz-a')
-    ? `${nodeName(subgraph, 'asset:cam-01')} and ${nodeName(subgraph, 'asset:cam-02')} serve ${nodeName(subgraph, 'segment:seg-dmz-a')}.`
+    ? `${nodeName(subgraph, 'asset:cam-01')} and ${nodeName(subgraph, 'asset:cam-02')} score ${nodeName(subgraph, 'segment:seg-dmz-a')}.`
     : 'Related work stays inside this customer.'
   const edges = (subgraph?.edges || []).filter((e: any) => e.type === 'SAME_SEGMENT' || e.type === 'HAS_FINDING' || e.type === 'OWNED_BY').slice(0, 8)
   return (
     <div>
-      <div className="graph-sentence">{sentence}</div>
-      <div className="graph-canvas"><MiniGraph subgraph={subgraph} /></div>
+      <div className="graph-head">
+        <div className="graph-sentence">{sentence}</div>
+        <button className="btn small" id="btn-graph-guide" type="button" onClick={() => guideRef.current?.showModal()}>What is this?</button>
+      </div>
+      <dialog ref={guideRef} id="graph-guide" className="guide">
+        <h2>Why this reply</h2>
+        <p><strong>Who.</strong> This picture is for the analyst on this desk, and for the credit risk or lending ops team the reply is written for. An applicant never sees it.</p>
+        <p><strong>What it is for.</strong> The draft may only cite things on this map. You use it to check that the reply is about this bank's models, not a loose paragraph.</p>
+        <p><strong>The dots.</strong> A request is an open case, such as F-101. A model is loan model v2 or v3. A use case is the book they score, Personal loans. A pod is the team that owns the work. Evidence is the fact the reply relies on, such as the holdout drop.</p>
+        <p><strong>The links.</strong> HAS_FINDING means this model is named in that request. SAME_SEGMENT means these models score the same book of loans. OWNED_BY means that team owns the model.</p>
+        <p>The line at the top is the decision in one sentence. Loan model v3 and loan model v2 score Personal loans.</p>
+        <button className="btn" type="button" onClick={() => guideRef.current?.close()}>Close</button>
+      </dialog>
+      <button className="graph-canvas graph-open" id="btn-expand-graph" type="button" aria-label="Expand map" onClick={() => mapRef.current?.showModal()}>
+        <MiniGraph subgraph={subgraph} />
+      </button>
+      <dialog ref={mapRef} id="graph-expanded" className="guide guide-map">
+        <div className="guide-bar">
+          <h2>The map</h2>
+          <button className="btn" type="button" onClick={() => mapRef.current?.close()}>Close</button>
+        </div>
+        <p className="stage-lead">Full names for this case. The small picture in the side panel is the same map.</p>
+        <div className="graph-canvas graph-canvas-large">
+          <MiniGraph subgraph={subgraph} width={920} height={440} pad={100} font={14} labelLimit={48} />
+        </div>
+        <ul className="map-names">
+          {nodes.map((n: any) => (
+            <li key={n.id}><span className="edge-type">{kindLabel(n.id)}</span> {n.label || n.id}</li>
+          ))}
+        </ul>
+      </dialog>
       <div className="legend">
         <span><i className="swatch" style={{background:'var(--accent)'}} /> request</span>
         <span><i className="swatch" style={{background:'#0E7C86'}} /> model</span>
@@ -637,17 +797,70 @@ function GraphReadout({subgraph}:{subgraph:any}) {
   )
 }
 
-function MiniGraph({subgraph}:{subgraph:any}) {
+function GraphRagView({catalog}:{catalog:any}) {
+  const mapRef = React.useRef<HTMLDialogElement>(null)
+  const counts = catalog?.counts || { nodes: (catalog?.nodes || []).length, edges: (catalog?.edges || []).length }
+  return (
+    <div>
+      <p className="graph-sentence">{counts.nodes} nodes, {counts.edges} edges.</p>
+      <button className="graph-canvas graphrag-canvas graph-open" id="btn-expand-graphrag" type="button" aria-label="Expand GraphRAG" onClick={() => mapRef.current?.showModal()}>
+        <GraphMap graph={catalog} mapId="graphrag-map" fit />
+      </button>
+      <dialog ref={mapRef} id="graphrag-expanded" className="guide guide-map guide-graphrag">
+        <div className="guide-bar">
+          <h2>GraphRAG</h2>
+          <button className="btn" type="button" onClick={() => mapRef.current?.close()}>Close</button>
+        </div>
+        <div className="graphrag-stage">
+          <GraphMap graph={catalog} mapId="graphrag-map-large" />
+        </div>
+        <div className="legend">
+          {EDGE_KINDS.map(([type, title, color]) => (
+            <span key={type}><i className="swatch" style={{background: color}} /> {title}</span>
+          ))}
+        </div>
+      </dialog>
+    </div>
+  )
+}
+
+function kindLabel(id: string): string {
+  const t = (id.split(':', 1)[0] || '').toLowerCase()
+  if (t === 'finding') return 'request'
+  if (t === 'asset') return 'model'
+  if (t === 'segment') return 'use case'
+  if (t === 'owner') return 'pod'
+  if (t === 'weakness') return 'evidence'
+  return t || 'item'
+}
+
+const GRAPH_COLUMNS: [string, string, string, string][] = [
+  ['finding', 'Requests', '#0C6B4D', '#E5F6EE'],
+  ['asset', 'Models', '#0E7C86', '#E0F2FE'],
+  ['segment', 'Use cases', '#C2410C', '#FFEDD5'],
+  ['owner', 'Pods', '#6D28D9', '#EDE9FE'],
+  ['weakness', 'Evidence', '#BE123C', '#FFE4E6'],
+]
+
+const EDGE_KINDS: [string, string, string][] = [
+  ['HAS_FINDING', 'Named in', '#16324F'],
+  ['SAME_SEGMENT', 'Same book', '#0E7C86'],
+  ['OWNED_BY', 'Owned by', '#6D28D9'],
+  ['RELATED_WEAKNESS', 'Evidence', '#BE123C'],
+  ['RUNS_ON', 'Runs on', '#854D0E'],
+]
+
+function MiniGraph({subgraph, width=300, height=200, pad=36, font=10, labelLimit=16}:{subgraph:any, width?:number, height?:number, pad?:number, font?:number, labelLimit?:number}) {
   const nodes = subgraph?.nodes||[]
   const edges = subgraph?.edges||[]
-  const W = 300, H = 200, P = 36
+  const W = width, H = height, P = pad
   const N = Math.max(nodes.length, 1)
   const positioned = nodes.map((n:any, i:number) => {
     const angle = (i / N) * Math.PI * 2 - Math.PI / 2
     const r = Math.min(W, H) / 2 - P
     const cx = W / 2 + r * Math.cos(angle)
     const cy = H / 2 + r * Math.sin(angle)
-    return {...n, cx, cy}
+    return {...n, cx, cy, angle}
   })
   const byId: Record<string, any> = {}
   positioned.forEach((n:any)=> byId[n.id]=n)
@@ -669,13 +882,142 @@ function MiniGraph({subgraph}:{subgraph:any}) {
         })}
       </g>
       <g>
-        {positioned.map((n:any)=>(
+        {positioned.map((n:any)=>{
+          const label = String(n.label||n.id).slice(0, labelLimit)
+          const lx = n.cx + Math.cos(n.angle) * (font + 8)
+          const ly = n.cy + Math.sin(n.angle) * (font + 8)
+          const anchor = Math.cos(n.angle) > 0.35 ? 'start' : Math.cos(n.angle) < -0.35 ? 'end' : 'middle'
+          return (
           <g key={n.id}>
-            <circle cx={n.cx} cy={n.cy} r="6" fill="#FFFFFF" stroke={colorFor(n.id)} strokeWidth="2" />
-            <title>{n.id}</title>
-            <text x={n.cx} y={n.cy + 16} fontSize="10" textAnchor="middle" fill="#12151C">{String(n.label||n.id).slice(0, 16)}</text>
+            <circle cx={n.cx} cy={n.cy} r={font > 12 ? 8 : 6} fill="#FFFFFF" stroke={colorFor(n.id)} strokeWidth="2" />
+            <title>{n.label || n.id}</title>
+            <text x={lx} y={ly} fontSize={font} textAnchor={anchor} fill="#12151C" stroke="#FFFFFF" strokeWidth="4" paintOrder="stroke">{label}</text>
           </g>
-        ))}
+          )
+        })}
+      </g>
+    </svg>
+  )
+}
+
+function GraphMap({graph, mapId, fit=false}:{graph:any, mapId?: string, fit?: boolean}) {
+  const font = 13
+  const rowH = 40
+  const pillH = 28
+  const gutter = 64
+  const top = 36
+  const nodes = graph?.nodes || []
+  const edges = graph?.edges || []
+  const known = new Set(GRAPH_COLUMNS.map(([type]) => type))
+  const columns: any[][] = GRAPH_COLUMNS.map(([type]) => nodes.filter((n: any) => n.type === type))
+  const extra = nodes.filter((n: any) => !known.has(n.type))
+  if (extra.length) columns.push(extra)
+  const byNode: Record<string, any> = {}
+  nodes.forEach((n: any) => { byNode[n.id] = n })
+  function linkedLabel(n: any, type: string): string {
+    const labels: string[] = []
+    edges.forEach((e: any) => {
+      const otherId = e.src === n.id ? e.dst : e.dst === n.id ? e.src : ''
+      const other = otherId ? byNode[otherId] : null
+      if (other && other.type === type) labels.push(String(other.label || other.id))
+    })
+    labels.sort()
+    return labels[0] || 'zzz'
+  }
+  columns[0].sort((a: any, b: any) => linkedLabel(a, 'asset').localeCompare(linkedLabel(b, 'asset')) || String(a.label || a.id).localeCompare(String(b.label || b.id)))
+  const slot: Record<string, number> = {}
+  columns[0].forEach((n: any, i: number) => { slot[n.id] = i })
+  for (let ci = 1; ci < columns.length; ci += 1) {
+    const ranked = columns[ci].map((n: any) => {
+      const ys: number[] = []
+      edges.forEach((e: any) => {
+        if (e.src === n.id && slot[e.dst] != null) ys.push(slot[e.dst])
+        if (e.dst === n.id && slot[e.src] != null) ys.push(slot[e.src])
+      })
+      ys.sort((a, b) => a - b)
+      return { n, target: ys.length ? ys[Math.floor((ys.length - 1) / 2)] : null }
+    }).sort((a, b) => (a.target ?? 99) - (b.target ?? 99) || String(a.n.label).localeCompare(String(b.n.label)))
+    let cursor = 0
+    ranked.forEach(item => {
+      const next = item.target == null ? cursor : Math.max(cursor, item.target)
+      slot[item.n.id] = next
+      cursor = next + 1
+    })
+    columns[ci] = ranked.map(item => item.n)
+  }
+  for (let ci = 1; ci < columns.length; ci += 1) {
+    const ranked = columns[ci].map((n: any) => {
+      const ys: number[] = []
+      edges.forEach((e: any) => {
+        if (e.src === n.id && slot[e.dst] != null) ys.push(slot[e.dst])
+        if (e.dst === n.id && slot[e.src] != null) ys.push(slot[e.src])
+      })
+      ys.sort((a, b) => a - b)
+      return { n, target: ys.length ? ys[Math.floor((ys.length - 1) / 2)] : null }
+    }).sort((a, b) => (a.target ?? 99) - (b.target ?? 99) || String(a.n.label).localeCompare(String(b.n.label)))
+    let cursor = 0
+    ranked.forEach(item => {
+      const next = item.target == null ? cursor : Math.max(cursor, item.target)
+      slot[item.n.id] = next
+      cursor = next + 1
+    })
+  }
+  const placed: Record<string, any> = {}
+  let x = 20
+  let maxBottom = top
+  columns.forEach((col, ci) => {
+    const width = Math.max(88, ...col.map((n: any) => Math.ceil(String(n.label || n.id).length * font * 0.58) + 34))
+    col.forEach((n: any) => {
+      const y = top + slot[n.id] * rowH
+      placed[n.id] = { ...n, x, y, w: width, h: pillH }
+      maxBottom = Math.max(maxBottom, y + pillH)
+    })
+    x += width + gutter
+    if (ci === columns.length - 1) x -= gutter
+  })
+  const W = x + 20
+  const H = maxBottom + 20
+  const nodeCount = graph?.counts?.nodes ?? nodes.length
+  const edgeCount = graph?.counts?.edges ?? edges.length
+  function tone(type: string): [string, string] {
+    const row = GRAPH_COLUMNS.find(([kind]) => kind === type)
+    return row ? [row[2], row[3]] : ['#3E4C5E', '#F6F8FA']
+  }
+  function edgeColor(type: string): string {
+    return EDGE_KINDS.find(([kind]) => kind === type)?.[2] || '#8B99A8'
+  }
+  return (
+    <svg id={mapId} width={fit ? '100%' : W} height={fit ? '100%' : H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`GraphRAG, ${nodeCount} nodes, ${edgeCount} edges`} preserveAspectRatio="xMidYMid meet">
+      {columns.map((col, ci) => col[0] && (
+        <text key={GRAPH_COLUMNS[ci]?.[0] || 'other'} x={placed[col[0].id].x} y={20} fontSize={12} fontWeight={700} fill="#3E4C5E">{GRAPH_COLUMNS[ci]?.[1] || 'Other'}</text>
+      ))}
+      <g fill="none">
+        {edges.map((e: any, i: number) => {
+          const s = placed[e.src], d = placed[e.dst]
+          if (!s || !d) return null
+          const forward = s.x <= d.x
+          const x1 = forward ? s.x + s.w : s.x
+          const x2 = forward ? d.x : d.x + d.w
+          const y1 = s.y + s.h / 2
+          const y2 = d.y + d.h / 2
+          const bend = Math.max(28, Math.abs(x2 - x1) / 2)
+          const c1 = x1 + (forward ? bend : -bend)
+          const c2 = x2 + (forward ? -bend : bend)
+          return <path key={i} d={`M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`} stroke={edgeColor(e.type)} strokeWidth="1.5" opacity="0.55"><title>{e.type}</title></path>
+        })}
+      </g>
+      <g>
+        {Object.values(placed).map((n: any) => {
+          const [ink, wash] = tone(n.type)
+          return (
+            <g key={n.id}>
+              <rect x={n.x} y={n.y} width={n.w} height={n.h} rx="8" fill={wash} stroke={ink} />
+              <circle cx={n.x + 12} cy={n.y + n.h / 2} r="4" fill={ink} />
+              <text x={n.x + 22} y={n.y + n.h / 2 + 4} fontSize={font} fill="#12171F">{n.label || n.id}</text>
+              <title>{n.label || n.id}</title>
+            </g>
+          )
+        })}
       </g>
     </svg>
   )

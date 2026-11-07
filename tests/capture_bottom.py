@@ -9,11 +9,12 @@ async def main():
         browser = await p.chromium.launch()
         ctx = await browser.new_context(viewport={"width":1440,"height":900}, device_scale_factor=1)
         page = await ctx.new_page()
-        await page.goto(FRONTEND)
-        await page.wait_for_function("() => document.body.innerText.includes('Acme (demo)')", timeout=15000)
+        await page.add_init_script("localStorage.setItem('casework-session','analyst')")
+        await page.goto("http://localhost:43123/desk")
+        await page.wait_for_function("() => document.body.innerText.includes('Emirates NBD Demo')", timeout=15000)
         await page.wait_for_selector("ul[data-testid='queue'] li", timeout=5000)
         await page.click("ul[data-testid='queue'] li >> nth=0")
-        await page.click("text=Run triage")
+        await page.click("text=Draft reply")
         # Wait for final step to exist
         await page.wait_for_function("() => document.querySelector('#panel-trace') && document.querySelector('#panel-trace').innerText.includes('Result')", timeout=15000)
         # Refresh audit so timeline is populated

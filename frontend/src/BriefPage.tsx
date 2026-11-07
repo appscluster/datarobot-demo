@@ -23,6 +23,14 @@ const BEATS = [
   },
 ]
 
+const CODE_FIRST = [
+  { name: 'Start', body: 'Draft reply calls run_triage in agent/runner.py with this bank and the open case.' },
+  { name: 'Planner', body: 'Checks the request is still inside Emirates NBD Demo. A cross tenant request stops here.' },
+  { name: 'Operator', body: 'Reads the case from SQLite GraphRAG, ranks it, and asks OmniRoute for the reply. LangChain Core builds that prompt in code.' },
+  { name: 'Checker', body: 'Rejects a draft that cites nothing in the graph.' },
+  { name: 'End', body: 'The run returns the draft. Approve, Escalate, or Reject is a person, after the graph has finished.' },
+]
+
 const SERVED = [
   {
     name: 'Credit risk',
@@ -130,53 +138,18 @@ const TOOLS = [
   },
   {
     name: 'SQLite',
-    how: 'SQLite holds the asset graph, the audit log, human decisions, and ingested scanner findings under backend/var.',
+    how: 'SQLite holds the asset graph, the audit log, and human decisions under backend/var.',
     why: 'One file is enough for the demo, and every row stays with its tenant. There is no separate database to operate.',
   },
   {
     name: 'Docker Compose',
-    how: 'Compose builds and runs the frontend and the backend. Separate profiles run the scanners or the optional LightRAG backend.',
-    why: 'The interview demo should start as one stack, and the scanners should stay in their own images.',
+    how: 'Compose builds and runs the frontend on port 43123 and the backend on port 54123.',
+    why: 'The interview demo should start as one stack.',
   },
   {
     name: 'OmniRoute',
     how: 'The draft step calls the local OmniRoute gateway at /v1/chat/completions. The model id is gh/gpt-5.6-terra. The trace shows the model name and the token count from that response. This repo does not change OmniRoute.',
     why: 'The reply has to be written by a model. OmniRoute is the gateway already running here, so the agent does not keep provider keys of its own.',
-  },
-  {
-    name: 'LightRAG',
-    how: 'An optional retrieval backend, off unless RETRIEVAL_BACKEND=lightrag. It indexes this tenant\'s graph text and can attach extra context. If it fails, retrieval falls back to SQLite. Citations still have to be real graph ids.',
-    why: 'The default demo stays on the graph. The optional path shows how a text index could sit beside that graph without inventing nodes.',
-  },
-  {
-    name: 'Ollama',
-    how: 'Only the LightRAG profile uses Ollama, at the host in LIGHTRAG docs, with qwen3:4b for text and nomic-embed-text for embeddings.',
-    why: 'That optional index should run on a local model. The live desk draft does not use Ollama. It uses OmniRoute.',
-  },
-  {
-    name: 'Gitleaks',
-    how: 'Gitleaks scans this repo for secrets. Findings can be ingested into SQLite and the graph with a masked preview only.',
-    why: 'A governed agent should be able to read scanner output for its own codebase without storing a raw secret.',
-  },
-  {
-    name: 'TruffleHog',
-    how: 'TruffleHog scans this repo for leaked credentials. Verification stays off unless the owner opts in.',
-    why: 'The same ingest path can take a second secret scanner without sending a found credential out to be checked.',
-  },
-  {
-    name: 'Trivy',
-    how: 'Trivy scans dependencies, the Dockerfile, and Compose config for this project.',
-    why: 'The agent can show dependency and config findings next to the lending cases, still limited to this repo.',
-  },
-  {
-    name: 'Semgrep',
-    how: 'Semgrep scans the Python, TypeScript, and React in this repo for insecure patterns.',
-    why: 'Static findings belong in the same graph and the same tenant guard as the rest of the queue.',
-  },
-  {
-    name: 'Prowler',
-    how: 'Prowler scans a cloud account only when the owner sets PROWLER_OPT_IN and supplies their own credentials. It is not part of the default scan.',
-    why: 'Cloud checks stay opt in, on the owner\'s account, and never on a customer or a guessed credential.',
   },
   {
     name: 'pytest',
@@ -190,8 +163,8 @@ const TOOLS = [
   },
   {
     name: 'OpenTelemetry',
-    how: 'The backend calls a startup hook named for OpenTelemetry. The hook does nothing unless an exporter endpoint is set. This demo does not export spans.',
-    why: 'The seam is there so a later build can report runs to DataRobot external agent monitoring without pretending those spans exist today.',
+    how: 'Each triage run opens an OpenTelemetry span named casework.run. The span carries the finding, the model, the token counts, and whether the checker passed. When DATAROBOT_API_TOKEN, DATAROBOT_ENTITY_ID, and a DataRobot endpoint are set, that span is sent to DataRobot.',
+    why: 'DataRobot external agent monitoring reads these spans. The run reports them now. Nothing is sent until those three values are set.',
   },
 ]
 
@@ -217,6 +190,20 @@ export function BriefPage() {
             </article>
           ))}
         </div>
+        <section aria-labelledby="code-first-heading">
+          <h2 id="code-first-heading">Code first</h2>
+          <p className="stage-lead">
+            The agent is a Python program. LangGraph compiles three functions, planner then operator then checker, from agent/runner.py. The state they share is the typed TriageState in that file: tenant, case, subgraph, rank, draft, and whether the planner refused. Tests call the same functions.
+          </p>
+          <ol className="code-first-flow">
+            {CODE_FIRST.map(step => (
+              <li key={step.name}>
+                <strong>{step.name}</strong>
+                <p>{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
         <section aria-labelledby="served-heading">
           <h2 id="served-heading">Who this serves</h2>
           <p className="stage-lead">
@@ -248,7 +235,7 @@ export function BriefPage() {
         </section>
         <section aria-labelledby="tools-heading">
           <h2 id="tools-heading">The tools</h2>
-          <p className="stage-lead">Every tool in this repo, what it does here, and why it is in the stack.</p>
+          <p className="stage-lead">The tools this running desk uses, what each one does here, and why it is in the stack.</p>
           <div className="tool-grid">
             {TOOLS.map(tool => (
               <article key={tool.name} className="brief-card">

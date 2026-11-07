@@ -29,18 +29,32 @@ async def run():
         page.on("console", on_console)
 
         await page.goto(FRONTEND)
+        await page.click("a[href='/login']")
+        await page.fill("#login-name", "analyst")
+        await page.fill("#login-password", "demo")
+        await page.click("#btn-login")
+        await page.wait_for_selector("#btn-open-desk", timeout=10000)
+        brief = await page.inner_text("body")
+        for beat in ("The problem", "The solution", "The live demo", "Challenges and learnings", "The vision"):
+            assert beat in brief, beat
+        await page.click("#btn-open-desk")
         await page.screenshot(path="/opt/cursor/artifacts/debug_after_goto.png", scale="css")
         txt = await page.evaluate("document.body.innerText")
         print('BODY:', txt[:2000])
         # Wait for session to populate
-        await page.wait_for_function("() => document.body.innerText.includes('Acme (demo)')", timeout=15000)
+        await page.wait_for_function("() => document.body.innerText.includes('Emirates NBD Demo')", timeout=15000)
         print('STEP: session ok, now wait findings')
         # Wait for at least one finding
         await page.wait_for_selector("ul[data-testid='queue'] li", timeout=5000)
+        queue_text = await page.inner_text("ul[data-testid='queue']")
+        assert "F-101" in queue_text, queue_text
+        assert "F-901" not in queue_text, queue_text
+        await page.click("#btn-scope-foreign")
+        await page.wait_for_function("() => document.querySelector('#scope-pill') && document.querySelector('#scope-pill').textContent.includes('cross_tenant')", timeout=8000)
         print('STEP: select + run')
         # Select first, start run
         await page.click("ul[data-testid='queue'] li >> nth=0")
-        await page.click("text=Run triage")
+        await page.click("text=Draft reply")
         # Wait for at least one streamed step
         await page.wait_for_selector("#panel-trace li", timeout=10000)
         print('STEP: got trace li')
@@ -90,9 +104,10 @@ async def run():
         context_m = await browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=1)
         page_m = await context_m.new_page()
         page_m.on("console", on_console)
-        await page_m.goto(FRONTEND)
+        await page_m.add_init_script("localStorage.setItem('casework-session','analyst')")
+        await page_m.goto("http://localhost:43123/desk")
         # Ensure session
-        await page_m.wait_for_function("() => document.body && document.body.innerText.includes('Acme (demo)')", timeout=15000)
+        await page_m.wait_for_function("() => document.body && document.body.innerText.includes('Emirates NBD Demo')", timeout=15000)
         # Queue screenshot before opening detail
         head = subprocess.check_output(["git","rev-parse","--short","HEAD"], text=True).strip()
         q_img = Path(f"/opt/cursor/artifacts/screen_run_{head}_390_queue.png")
@@ -100,7 +115,7 @@ async def run():
         await page_m.wait_for_selector("ul[data-testid='queue'] li", timeout=5000)
         await page_m.click("ul[data-testid='queue'] li >> nth=0")
         await page_m.wait_for_selector(".finding-title", timeout=5000)
-        await page_m.click("text=Run triage")
+        await page_m.click("text=Draft reply")
         # Scope refusal on mobile (styled banner)
         await page_m.fill("input[placeholder^='Ask or check']", "shut down camera now")
         await page_m.click("button:has-text('Check')")

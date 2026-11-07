@@ -1,10 +1,8 @@
 from __future__ import annotations
-import os
+
+from agent.monitoring import configure
+
 
 def init_otel() -> None:
-    # Minimal stub for DataRobot external-agent monitoring via OpenTelemetry.
-    # If OTEL_* env vars are present, an actual SDK setup could be done here.
-    # For the interview build, this is intentionally a no-op.
-    if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        # Place SDK setup here in a real integration.
-        pass
+    """Open the tracer for casework runs and export when DataRobot is configured."""
+    configure()
