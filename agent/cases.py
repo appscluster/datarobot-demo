@@ -29,7 +29,7 @@ def finding_context(finding_id: str) -> dict:
     west = next(row for row in rows if row.region == "west")
     audience = AUDIENCE.get(finding_id, "Credit risk")
     if finding_id == "F-102":
-        missing = ", ".join(name.replace("_", " ") for name in report.missing_columns if name != "debt_to_income")
+        missing = " and ".join(name.replace("_", " ") for name in report.missing_columns if name != "debt_to_income")
         pipeline = {"name": "intake", "summary": f"The file is missing {missing}."}
     elif finding_id == "F-104":
         pipeline = {

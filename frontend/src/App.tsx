@@ -415,7 +415,7 @@ export function App({ onSignOut }: { onSignOut?: () => void }) {
                 <h2 className="finding-title"><span className={`pill ${sevClass(detail.severity)}`} style={{marginRight:8}}>{(detail.severity||'').toLowerCase()}</span>{detail.title}</h2>
                 <p className="stage-lead">{detail.ask || 'Emirates NBD Demo only. The agent reads this customer graph. It does not call their systems.'}</p>
                 {detail.audience && detail.pipeline?.summary && (
-                  <p className="stage-lead" id="reply-audience">Reply for {detail.audience}. {detail.pipeline.summary}.</p>
+                  <p className="stage-lead" id="reply-audience">Reply for {detail.audience}. {detail.pipeline.summary}</p>
                 )}
                 {detail.source_tool ? (
                 <div className="meta-chips">
