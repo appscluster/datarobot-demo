@@ -5,6 +5,19 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "frontend" / "src"
 
 
+def test_landing_says_who_it_is_for():
+    text = (SRC / "LandingPage.tsx").read_text()
+    assert "Who it is for" in text
+    assert "The analyst's desk for a loan model decision." in text
+    assert "only person who signs in" in text
+    assert "Credit risk" in text
+    assert "not a user" in text
+    assert "does not approve a person's loan" in text
+    assert "Not a loan application." in text
+    assert "v2 is the model scoring applications today" in text
+    assert "both score Personal loans" not in text
+
+
 def test_landing_follows_the_scroll_guide():
     text = (SRC / "LandingPage.tsx").read_text()
     assert "AOS.init" in text

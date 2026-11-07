@@ -407,7 +407,8 @@ ul.queue li.empty-queue { border: 0; background: transparent; box-shadow: none; 
 .land-row { padding: 16px 18px; margin: 12px 0; }
 .land-row h3, .pillar h3, .brief-card h2 { margin: 0 0 6px; font-size: 18px; letter-spacing: -0.02em; }
 .land-row p, .pillar p, .brief-card p { margin: 0; color: var(--muted); }
-.pillars { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.pillars, .audience { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.audience { grid-template-columns: 1fr 1fr 1fr; }
 .pillar { padding: 16px 18px; }
 .land-cta { padding: 28px; margin: 28px 0 48px; }
 .gate {
@@ -526,7 +527,7 @@ ul.queue li.empty-queue { border: 0; background: transparent; box-shadow: none; 
 .tool-grid .brief-card strong, .serve-grid .brief-card strong { color: var(--ink); }
 .tool-grid p + p, .serve-grid p + p { margin-top: 8px; }
 @media (max-width: 800px) {
-  .hero, .pillars, .brief-grid, .tool-grid, .serve-grid { grid-template-columns: 1fr; }
+  .hero, .pillars, .audience, .brief-grid, .tool-grid, .serve-grid { grid-template-columns: 1fr; }
   .hero { padding-top: 32px; }
   .hero h1, .brief h1, .gate h1 { font-size: 32px; }
   .brief-card:last-child { grid-column: auto; }
