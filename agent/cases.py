@@ -44,6 +44,15 @@ def finding_context(finding_id: str) -> dict:
         note = retrain_note()
         started = "started" if note["started"] else "not started"
         pipeline = {"name": "lending ops", "summary": f"The retrain note is {note['status']} and has {started}."}
+    elif finding_id == "F-106":
+        owner = state.nightly_owner or "no owner"
+        pipeline = {
+            "name": "scoring",
+            "summary": (
+                f"Nightly scoring has {owner}. {state.live_model} scores the book, "
+                f"including {west.application_id}."
+            ),
+        }
     else:
         pipeline = {
             "name": "scoring",

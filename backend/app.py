@@ -17,7 +17,7 @@ from agent import checker as checker_mod
 from agent import security_sources as sec_mod
 from agent import retrieval as retrieval_mod
 from agent.cases import finding_context
-from agent.delivery import deliver
+from agent.delivery import deliver, note_for_guard
 from agent.promotion import request_promotion
 from agent.scoring import load_scoring
 from .otel_stub import init_otel
@@ -213,7 +213,7 @@ async def record_decision(payload: Dict[str, Any]):
     finding_id = payload.get("finding_id")
     decision = str(payload.get("decision", "")).lower()
     actor = payload.get("actor")
-    note = payload.get("note", "")
+    caller_note = str(payload.get("note") or "")
     # Enforce run gating for Approve: must reference a completed, checker-passed run for this tenant/finding
     if decision == "approve":
         if not run_id or run_id not in RUN_HISTORY or run_id not in RUN_RESULTS:
@@ -231,8 +231,9 @@ async def record_decision(payload: Dict[str, Any]):
     audience = finding_context(str(finding_id))["audience"] if finding_id else "Credit risk"
     item = deliver(decision, audience, bool(run_id and run_id in RUN_RESULTS))
     note = item.note
+    screened = note_for_guard(caller_note, note)
     # Scope guard (tenant, actor, destructive notes, cross-tenant references)
-    v = scope_mod.guard(SESSION, "record_decision", {"tenant_id": tenant_id, "run_id": run_id, "finding_id": finding_id, "decision": decision, "actor": actor, "note": note}, run_id=run_id)
+    v = scope_mod.guard(SESSION, "record_decision", {"tenant_id": tenant_id, "run_id": run_id, "finding_id": finding_id, "decision": decision, "actor": actor, "note": screened}, run_id=run_id)
     if not v.allowed:
         return JSONResponse(status_code=403, content=v.__dict__)
     import sqlite3

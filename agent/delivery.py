@@ -9,6 +9,10 @@ class Delivery:
     note: str
 
 
+def note_for_guard(caller_note: str, delivery_note: str) -> str:
+    return f"{caller_note} {delivery_note}".strip()
+
+
 def deliver(decision: str, audience: str, draft_ready: bool) -> Delivery:
     choice = decision.lower()
     if choice == "approve":
