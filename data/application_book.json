@@ -1,0 +1,47 @@
+[
+  {
+    "application_id": "A-1001",
+    "tenant_id": "tenant_demo_acme",
+    "region": "west",
+    "applicant_name": "Samir Qasim",
+    "income": 18000,
+    "loan_amount": 40000,
+    "debt_to_income": null
+  },
+  {
+    "application_id": "A-1002",
+    "tenant_id": "tenant_demo_acme",
+    "region": "central",
+    "applicant_name": "Hana Farid",
+    "income": 22000,
+    "loan_amount": 25000,
+    "debt_to_income": 0.31
+  },
+  {
+    "application_id": "A-1003",
+    "tenant_id": "tenant_demo_acme",
+    "region": "north",
+    "applicant_name": "",
+    "income": null,
+    "loan_amount": null,
+    "debt_to_income": 0.22
+  },
+  {
+    "application_id": "A-1004",
+    "tenant_id": "tenant_demo_acme",
+    "region": "east",
+    "applicant_name": "Leila Nasser",
+    "income": 15000,
+    "loan_amount": 18000,
+    "debt_to_income": null
+  },
+  {
+    "application_id": "A-1005",
+    "tenant_id": "tenant_demo_acme",
+    "region": "central",
+    "applicant_name": "Yusuf Karim",
+    "income": 27000,
+    "loan_amount": 30000,
+    "debt_to_income": 0.18
+  }
+]
